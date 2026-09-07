@@ -31,6 +31,7 @@ Usage: tem [help | version | describe | demo]
        tem recover <directory>
        tem seal <directory>
        tem verify-segment <segment-file>
+       tem inspect-summary <summary-file>
        tem checkpoint <directory>
        tem reconstruct <directory> <sequence>
        tem evaluate-codecs
@@ -49,6 +50,7 @@ Usage: tem [help | version | describe | demo]
   recover    Explicitly truncate an incomplete tail; never skip corrupt frames
   seal       Export immutable TSF segments while retaining the authoritative WAL
   verify-segment  Validate a standalone TSF segment
+  inspect-summary Validate a companion TSM summary index and report zone maps
   checkpoint      Take an atomic checksummed state checkpoint pinned to current WAL sequence
   reconstruct     Deterministically replay WAL events to target sequence
   evaluate-codecs Evaluate candidate lossless codecs on representative streams
@@ -73,7 +75,7 @@ const CAPABILITIES: &str = concat!(
     "\"time-range-filter\", \"known-as-of\", \"bounded-snapshot-pagination\", ",
     "\"scalar-schemas\", \"wal-recovery\", \"immutable-tsf-export\", ",
     "\"deterministic-reconstruction\", \"lossless-codecs\", ",
-    "\"branching-timelines\", \"causal-graph\"],\n",
+    "\"branching-timelines\", \"causal-graph\", \"hierarchical-summaries\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": false,\n",
@@ -451,6 +453,57 @@ fn run() -> Result<(), Box<dyn Error>> {
                 segment.header.source.0,
                 segment.header.epoch.0
             )?;
+        }
+        ("inspect-summary", [path]) => {
+            let summary = temnion_storage::read_segment_summary(Path::new(path))?;
+            writeln!(
+                out,
+                "Valid TSM: records={} blocks={} source={} epoch={}",
+                summary.total_records,
+                summary.blocks.len(),
+                summary.source.0,
+                summary.epoch.0
+            )?;
+            writeln!(
+                out,
+                "  Sequence: {}..={}",
+                summary.sequence_range.min, summary.sequence_range.max
+            )?;
+            writeln!(
+                out,
+                "  Valid time: clock={} {}..={}",
+                summary.valid_time_range.clock.0,
+                summary.valid_time_range.min_ticks,
+                summary.valid_time_range.max_ticks
+            )?;
+            writeln!(
+                out,
+                "  Known time: clock={} {}..={}",
+                summary.known_time_range.clock.0,
+                summary.known_time_range.min_ticks,
+                summary.known_time_range.max_ticks
+            )?;
+            writeln!(
+                out,
+                "  Entities: {}:{}:{}..={}:{}:{}",
+                summary.entity_range.min.shard.0,
+                summary.entity_range.min.slot,
+                summary.entity_range.min.generation,
+                summary.entity_range.max.shard.0,
+                summary.entity_range.max.slot,
+                summary.entity_range.max.generation,
+            )?;
+            for block in &summary.blocks {
+                writeln!(
+                    out,
+                    "  Block {}: records={} bytes={} seq={}..={}",
+                    block.batch_index,
+                    block.record_count,
+                    block.byte_length,
+                    block.sequence_range.min,
+                    block.sequence_range.max
+                )?;
+            }
         }
         ("checkpoint", [path]) => {
             let target_seq = {

@@ -1,19 +1,17 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 [package]
-name = "temnion-storage"
+name = "temnion-index"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Checksummed durable source logs and immutable TSF exports for Temnion"
 
 [dependencies]
 temnion-core.workspace = true
 temnion-events.workspace = true
 temnion-format.workspace = true
-temnion-index.workspace = true
-fs2.workspace = true
-getrandom.workspace = true
+crc32fast.workspace = true
 
 [lints]
 workspace = true

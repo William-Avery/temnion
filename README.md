@@ -8,7 +8,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, and causal DAG tracing.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, and hierarchical summaries.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
 > and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
@@ -16,6 +16,8 @@ first consumer, not a dependency of the database core.
 > provides dynamically scored lossless compression primitives. `temnion-branch`
 > provides structurally shared branching timelines and persistent DAG manifests.
 > `temnion-causal` provides CSR-packed causal graphs and bidirectional DAG tracing.
+> `temnion-index` provides hierarchical summaries, clock-scoped zone maps, entity
+> Bloom filters, and zero-false-negative predicate pushdown block skipping.
 
 ## What works now
 
@@ -26,16 +28,17 @@ first consumer, not a dependency of the database core.
 | `temnion-events` | Per-source bounded `EventLog<T>`, typed payloads, atomic batch admission, entity/time/known-as-of filters and bounded snapshot pagination |
 | `temnion-schema` | Validated scalar schemas, exact typed values, sparse mutations, atomic in-memory apply and bounded canonical binary encoding |
 | `temnion-format` | Versioned, bounded, checksummed WAL headers/batches and independently readable raw TSF v1 segments |
-| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, disk-backed bounded queries and non-overwriting TSF export |
+| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, predicate pushdown block skipping and companion TSM export |
 | `temnion-codec` | Strictly lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with CRC32C framing, dynamic scoring and raw fallback |
+| `temnion-index` | Hierarchical block/segment summaries (TNSM), clock-scoped zone maps, entity Bloom filters and zero-false-negative block skipping |
 | `temnion-replay` | Deterministic reconstruction, periodic atomic checkpoints (TNCP), SplitMix64 step-counted PRNG tracking and bit-for-bit replay equivalence |
 | `temnion-branch` | Structurally shared timeline branching, zero-payload-duplication forks, atomic manifest updates (TNBM), lifecycle states, and interval timeline resolution |
 | `temnion-causal` | First-class causal graph (TNCG), CSR-packed flat indexing, bidirectional immediate queries, transitive causal/effect cone tracing, topological sort, and cycle detection |
-| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, and `causal-trace` commands |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, and `causal-trace` commands |
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
-Disk history uses a source-local WAL batch-offset index and bounded frame
-decoding, not an entity/spatial index. Startup scans the authoritative WAL.
+Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
+with zone maps and Bloom filters, and bounded frame decoding. Startup scans the authoritative WAL.
 Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 

@@ -22,6 +22,7 @@ temnion-codec.workspace = true
 temnion-replay.workspace = true
 temnion-causal.workspace = true
 temnion-branch.workspace = true
+temnion-index.workspace = true
 
 [lints]
 workspace = true
