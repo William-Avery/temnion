@@ -386,7 +386,7 @@ impl Codec for BitPackCodec {
         let packed_bytes_len = if bits == 0 {
             0
         } else {
-            ((word_count * bits as usize) + 7) / 8
+            (word_count * bits as usize).div_ceil(8)
         };
 
         if body.len() < 5 + packed_bytes_len + remainder_len {
@@ -537,7 +537,7 @@ impl Codec for DeltaForCodec {
         let packed_bytes_len = if bits == 0 {
             0
         } else {
-            ((u64_count * bits as usize) + 7) / 8
+            (u64_count * bits as usize).div_ceil(8)
         };
 
         if body.len() < 13 + packed_bytes_len + remainder_len {

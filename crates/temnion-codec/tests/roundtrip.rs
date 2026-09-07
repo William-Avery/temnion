@@ -131,7 +131,10 @@ fn xor_codec_compresses_smooth_and_repeated_float_bits() {
 
 #[test]
 fn candidate_scorer_selects_winning_codec_and_falls_back_to_raw() {
-    let scorer = CodecScorer::default();
+    let scorer = CodecScorer {
+        alpha_decode: 0.0,
+        beta_encode: 0.0,
+    };
 
     // Repeated data should pick RLE
     let run_data = vec![0xAA; 500];
