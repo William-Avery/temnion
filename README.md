@@ -20,7 +20,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), and an initial Temnion Studio desktop slice.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), Epistemic Knowledge Store (EKS), deterministic transformations, canonical IR e-graphs, and an initial Temnion Studio desktop slice.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
 > and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
@@ -38,6 +38,10 @@ first consumer, not a dependency of the database core.
 > Arrow columnar batch layout, and safe handle-based C ABI. `temnion-flight`
 > provides remote authenticated Arrow Flight bulk analytical streaming. `temnion-mcp`
 > provides the control-plane Model Context Protocol (MCP) JSON-RPC 2.0 server.
+> `temnion-eks` provides the Epistemic Knowledge Store with truth maintenance,
+> cascading retraction, `WHY` provenance traversal, predictive calibration, and tiered consolidation.
+> `temnion-transform` provides deterministic transformations, CPU/memory resource metering,
+> and canonical query IR e-graph optimization with equality saturation and cycle-safe extraction.
 
 ## What works now
 
@@ -58,8 +62,10 @@ first consumer, not a dependency of the database core.
 | `temnion-query` | Canonical typed query IR (LogicalPlan, Expr), physical planning with predicate pushdown (PhysicalPlan), EXPLAIN formatting, reference executor with resource budgets, and equivalent human TemQL and AI-compact tn: shorthand parsers |
 | `temnion-protocol` | Framed binary protocol (TNP), handshake negotiation, streaming query results, duplex pipe/socket IPC (TnpChannel, TnpServer), Arrow columnar layout (ColumnarBatch), and panic-safe C ABI (temnion_c_*) |
 | `temnion-flight` | Authenticated Arrow Flight remote analytical transport (`FlightDescriptor`, `Ticket`, `FlightInfo`, `FlightData` streaming columnar batches, `FlightService`) |
-| `temnion-mcp` | Model Context Protocol (MCP) JSON-RPC 2.0 control-plane server exposing query, explain, inspect, branch, causal tools, resources, and prompt templates |
-| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, and `mcp` commands |
+| `temnion-mcp` | Model Context Protocol (MCP) JSON-RPC 2.0 control-plane server exposing query, explain, inspect, branch, causal, why_trace, and rewrite_expr tools, resources, and prompt templates |
+| `temnion-eks` | Epistemic Knowledge Store (EKS) with versioned primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance with non-destructive cascading retraction, `WHY` provenance traversal, predictive ledger with Brier score calibration, and tiered consolidation (`Active`, `Reference`, `Archive`) |
+| `temnion-transform` | Deterministic transformation engine with versioned manifests, typed signatures, CPU/memory resource metering, immutable lineage logs, and canonical query IR e-graph optimizer with equality saturation, constant folding, and cycle-safe plan extraction |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, and `rewrite-demo` commands |
 | `temnion-studio` | Initial Tauri 2 + React/TypeScript desktop client using TanStack Query/Table for real bounded local open/create, query, EXPLAIN, history, append, branch inspection and causal-trace flows |
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
@@ -70,8 +76,8 @@ Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
 **Still unfinished:** manifest-based WAL retirement,
-standalone `temniond` daemon, full Studio v1 and native platform packaging, EKS, transformations,
-evolution, and Tzeentch integration.
+standalone `temniond` daemon, full Studio v1 and native platform packaging,
+isolated measured evolution, and Tzeentch integration.
 
 ## Quick start
 

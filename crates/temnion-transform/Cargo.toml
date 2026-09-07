@@ -1,0 +1,16 @@
+[package]
+name = "temnion-transform"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Deterministic transformation engine and canonical IR e-graph optimizer for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-query.workspace = true
+temnion-eks.workspace = true
+
+[lints]
+workspace = true

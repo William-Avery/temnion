@@ -12,18 +12,20 @@ use temnion_core::{
     BranchId, ClockId, EntityId, EventId, EventTimes, SchemaId, ShardId, SourceEpoch, SourceId,
     Timestamp,
 };
+use temnion_eks::{Confidence, Justification, TruthMaintenanceSystem};
 use temnion_events::{EventInput, EventLog, HistoryFilter, QueryBudget};
 use temnion_format::{Limits, StoredEvent, decode_segment};
 use temnion_mcp::McpServer;
 use temnion_query::{
-    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_sql,
-    parse_temql, plan_query,
+    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_expr,
+    parse_sql, parse_temql, plan_query,
 };
 use temnion_replay::{
     Checkpoint, RawEntityReducer, ReplayEngine, decode_raw_entity_map, encode_raw_entity_map,
 };
 use temnion_state::StateSlab;
 use temnion_storage::{RecoveryMode, StorageQueryBudget, Store, WriteEvent, read_bounded_file};
+use temnion_transform::EGraph;
 
 const HELP: &str = "\
 tem - Temnion CLI
@@ -46,11 +48,15 @@ Usage: tem [help | version | describe | demo]
        tem query <directory> <query-str>
        tem explain <query-str>
        tem mcp [directory]
+       tem why-demo
+       tem rewrite-demo <expression>
 
   help       Show this help
   version    Show the version
   describe   Print implemented capabilities as JSON
   demo       Run an in-memory state/history example; writes no files
+  why-demo   Run an in-memory Epistemic Knowledge Store (EKS) and WHY trace example
+  rewrite-demo Run an e-graph equality saturation optimization on an expression
   init       Create a durable source log with an OS-random database identity
   append     Persist one opaque typed payload; acknowledge only after OS sync
   history    Read one bounded history page (payload previews, default 100 rows)
@@ -90,7 +96,8 @@ const CAPABILITIES: &str = concat!(
     "\"nd-layouts\", \"alternate-projections\", \"virtual-shards\", ",
     "\"background-dag\", \"storage-hierarchy\", \"query-ir\", \"temql\", ",
     "\"compact-tem\", \"sql\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\", ",
-    "\"flight\", \"mcp\"],\n",
+    "\"flight\", \"mcp\", \"eks\", \"provenance\", \"predictive-knowledge\", ",
+    "\"knowledge-consolidation\", \"transformations\", \"e-graphs\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
@@ -98,6 +105,9 @@ const CAPABILITIES: &str = concat!(
     "  \"tnp\": true,\n",
     "  \"tsf\": true,\n",
     "  \"mcp\": true,\n",
+    "  \"eks\": true,\n",
+    "  \"transformations\": true,\n",
+    "  \"e-graphs\": true,\n",
     "  \"studio\": false\n",
     "}"
 );
@@ -781,6 +791,91 @@ fn run() -> Result<(), Box<dyn Error>> {
             let stdin = io::stdin();
             let stdout = io::stdout();
             server.run_stdio(stdin.lock(), stdout.lock())?;
+        }
+        ("why-demo", []) => {
+            let mut tms = TruthMaintenanceSystem::new();
+            let ev = EventId {
+                source: SourceId(1),
+                epoch: SourceEpoch(1),
+                sequence: 100,
+            };
+            let _obs_id = tms.record_observation(
+                ev,
+                Timestamp::new(ClockId(1), 10),
+                Timestamp::new(ClockId(1), 12),
+                "sensor.temperature",
+                "98.6 C",
+            );
+            let claim_id = tms.assert_claim(
+                "telemetry-agent",
+                "temperature exceeds safe operating threshold",
+                Confidence::new(0.96).unwrap(),
+                Timestamp::new(ClockId(1), 10)..Timestamp::new(ClockId(1), 25),
+                Timestamp::new(ClockId(1), 12),
+            );
+            let rule_id = tms.define_rule(
+                "overheat_triggers_cooling",
+                "temperature exceeds safe operating threshold",
+                "activate emergency secondary cooling",
+                Confidence::new(0.99).unwrap(),
+            );
+            let belief_id = tms.infer_belief(
+                "activate emergency secondary cooling",
+                Confidence::new(0.95).unwrap(),
+                Timestamp::new(ClockId(1), 10),
+                Timestamp::new(ClockId(1), 13),
+                Justification {
+                    evidence_events: vec![ev],
+                    premises: vec![claim_id],
+                    applied_rules: vec![rule_id],
+                    assumptions: vec!["primary coolant loop pressure low".to_string()],
+                },
+            );
+
+            let trace = tms.why(belief_id)?;
+            writeln!(out, "Epistemic Knowledge Store (EKS) WHY Trace:")?;
+            writeln!(
+                out,
+                "  Belief: k:{} \"{}\"",
+                trace.target_id.0, trace.proposition
+            )?;
+            writeln!(out, "  Status: {:?}", trace.status)?;
+            writeln!(out, "  Confidence: {:.2}", trace.confidence.value())?;
+            writeln!(out, "  Grounding WAL Events: {:?}", trace.direct_evidence)?;
+            writeln!(out, "  Assumptions: {:?}", trace.assumptions)?;
+            writeln!(
+                out,
+                "  Applied Rules: {:?}",
+                trace
+                    .applied_rules
+                    .iter()
+                    .map(|r| &r.name)
+                    .collect::<Vec<_>>()
+            )?;
+            writeln!(
+                out,
+                "  Premise Dependencies: {:?}",
+                trace.premise_traces.len()
+            )?;
+        }
+        ("rewrite-demo", [expr_str]) => {
+            let expr_text = text(expr_str)?;
+            let parsed = parse_expr(expr_text)?;
+            let mut egraph = EGraph::new();
+            let root = egraph.add_expr(&parsed);
+            egraph.rebuild();
+            let report = egraph.saturate(10);
+            let (extracted, cost) = egraph
+                .extract_best_expr(root)
+                .map_err(|e| format!("Extraction failed: {e}"))?;
+
+            writeln!(out, "Canonical IR E-Graph Optimization:")?;
+            writeln!(out, "  Original Expression: {parsed}")?;
+            writeln!(out, "  Saturated Classes: {}", report.total_classes)?;
+            writeln!(out, "  Rewrites Applied: {}", report.total_rewrites)?;
+            writeln!(out, "  Saturation Iterations: {}", report.iterations)?;
+            writeln!(out, "  Extracted Minimal Expression: {extracted}")?;
+            writeln!(out, "  Minimal AST Cost: {cost}")?;
         }
         _ => {
             return Err(format!(
