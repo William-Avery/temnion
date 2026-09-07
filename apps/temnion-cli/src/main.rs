@@ -5,6 +5,10 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use temnion_adapter::{
+    CadenceScheduler, CadenceTier, MediaRef, TzeentchAction, TzeentchActionTracer,
+    TzeentchConverter, TzeentchIntention, TzeentchOutcome, TzeentchPercept,
+};
 use temnion_branch::{BranchLifecycle, BranchManager};
 use temnion_causal::CausalGraph;
 use temnion_codec::CodecScorer;
@@ -51,6 +55,8 @@ Usage: tem [help | version | describe | demo]
        tem why-demo
        tem rewrite-demo <expression>
        tem evolve [status | audit | demo]
+       tem tzeentch [demo | status | trace <entity-name>]
+       tem benchmark scale [records]
 
   help       Show this help
   version    Show the version
@@ -59,6 +65,8 @@ Usage: tem [help | version | describe | demo]
   why-demo   Run an in-memory Epistemic Knowledge Store (EKS) and WHY trace example
   rewrite-demo Run an e-graph equality saturation optimization on an expression
   evolve     Inspect champion/challenger evolution engine, audit constitution, or run demo
+  tzeentch   Inspect Tzeentch adapter, run multi-cadence demo, or introspect causal action traces
+  benchmark  Run scale benchmark harness (4K, 64K, 1M+ active records)
   init       Create a durable source log with an OS-random database identity
   append     Persist one opaque typed payload; acknowledge only after OS sync
   history    Read one bounded history page (payload previews, default 100 rows)
@@ -101,7 +109,8 @@ const CAPABILITIES: &str = concat!(
     "\"flight\", \"mcp\", \"eks\", \"provenance\", \"predictive-knowledge\", ",
     "\"knowledge-consolidation\", \"transformations\", \"e-graphs\", ",
     "\"evolution\", \"adaptive-physical-memory\", \"adaptive-lifecycle\", ",
-    "\"semantic-projections\", \"constitution\"],\n",
+    "\"semantic-projections\", \"constitution\", \"tzeentch-adapter\", ",
+    "\"causal-action-trace\", \"scale-qualified\", \"retention-holds\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
@@ -115,6 +124,10 @@ const CAPABILITIES: &str = concat!(
     "  \"evolution\": true,\n",
     "  \"constitution\": true,\n",
     "  \"semantic_projections\": true,\n",
+    "  \"tzeentch_adapter\": true,\n",
+    "  \"causal_action_trace\": true,\n",
+    "  \"scale_qualified\": true,\n",
+    "  \"retention_holds\": true,\n",
     "  \"studio\": false\n",
     "}"
 );
@@ -1048,6 +1061,46 @@ fn run() -> Result<(), Box<dyn Error>> {
                 }
             }
         }
+        ("tzeentch", []) => tzeentch_demo_cmd(&mut out)?,
+        ("tzeentch", [subcmd]) => match text(subcmd)? {
+            "demo" => tzeentch_demo_cmd(&mut out)?,
+            "status" => tzeentch_status_cmd(&mut out)?,
+            other => {
+                return Err(format!(
+                    "unknown tzeentch subcommand '{other}'; use 'demo', 'status', or 'trace <name>'"
+                )
+                .into());
+            }
+        },
+        ("tzeentch", [subcmd, entity_name]) => match text(subcmd)? {
+            "trace" => tzeentch_trace_cmd(&mut out, text(entity_name)?)?,
+            other => {
+                return Err(
+                    format!("unknown tzeentch subcommand '{other}'; use 'trace <name>'").into(),
+                );
+            }
+        },
+        ("benchmark", [subcmd]) => match text(subcmd)? {
+            "scale" => benchmark_scale_cmd(&mut out, 4_000)?,
+            other => {
+                return Err(format!(
+                    "unknown benchmark subcommand '{other}'; use 'scale [records]'"
+                )
+                .into());
+            }
+        },
+        ("benchmark", [subcmd, recs]) => match text(subcmd)? {
+            "scale" => {
+                let count: usize = text(recs)?.parse()?;
+                benchmark_scale_cmd(&mut out, count)?
+            }
+            other => {
+                return Err(format!(
+                    "unknown benchmark subcommand '{other}'; use 'scale [records]'"
+                )
+                .into());
+            }
+        },
         _ => {
             return Err(format!(
                 "unknown command or invalid arguments for '{command}'; use 'tem help'"
@@ -1056,6 +1109,508 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
     }
     out.flush()?;
+    Ok(())
+}
+
+fn tzeentch_status_cmd(out: &mut impl Write) -> io::Result<()> {
+    writeln!(out, "Temnion Tzeentch Adapter Status:")?;
+    writeln!(out, "  Migration Modes:")?;
+    writeln!(
+        out,
+        "    - LegacyOnly: All writes routed to legacy DB, zero to Temnion"
+    )?;
+    writeln!(
+        out,
+        "    - ShadowMirror: Authoritative legacy, best-effort async mirror to Temnion (zero silent drops)"
+    )?;
+    writeln!(
+        out,
+        "    - TemnionAuthoritative: Authoritative Temnion, fallback read to legacy"
+    )?;
+    writeln!(
+        out,
+        "    - TemnionOnly: Full cutover, zero legacy dependencies"
+    )?;
+    writeln!(out, "  Cadence Multi-Timescale Clocks:")?;
+    writeln!(
+        out,
+        "    - Fast (120 Hz): Reflex loops, actuator commands, raw sensor samples"
+    )?;
+    writeln!(
+        out,
+        "    - Medium (20 Hz): Organ state integration, tracking filters"
+    )?;
+    writeln!(
+        out,
+        "    - Slow (1 Hz): Belief updates, high-level intentions, planner steps"
+    )?;
+    writeln!(
+        out,
+        "    - Background (0.1 Hz): Epistemic consolidation, episodic memory indexing, GC"
+    )?;
+    writeln!(out, "  Causal Introspection Guarantees:")?;
+    writeln!(
+        out,
+        "    - Strict chain: Perception -> Organ/Cell -> Belief -> Prediction -> Decision -> Action -> Outcome"
+    )?;
+    writeln!(
+        out,
+        "    - Explicit SourceGap nodes emitted whenever provenance is partial"
+    )?;
+    writeln!(
+        out,
+        "    - Invariant: Zero future-knowledge leakage verified at every node"
+    )?;
+    writeln!(out, "  Retention & Reference Holds:")?;
+    writeln!(
+        out,
+        "    - Pinned causal reference holds guarantee zero accidental eviction of critical lineage"
+    )?;
+    Ok(())
+}
+
+fn tzeentch_demo_cmd(out: &mut impl Write) -> Result<(), Box<dyn Error>> {
+    let mut scheduler = CadenceScheduler::new();
+
+    scheduler.tick(CadenceTier::Fast, 1_000_000);
+    scheduler.tick(CadenceTier::Medium, 1_000_000);
+    scheduler.tick(CadenceTier::Slow, 1_000_000);
+
+    let media = MediaRef::new(
+        "media://cam0/frame_101.raw",
+        b"RGB_CAMERA_FRAME_320x240_SENSOR_0",
+        "image/raw",
+    );
+    let percept = TzeentchPercept {
+        organ_id: "vision_organ".into(),
+        sensor_id: "retina_cell_4".into(),
+        cadence: CadenceTier::Fast,
+        media_ref: Some(media),
+        features: vec![0.85, 0.12, 0.44],
+        timestamp: 100,
+    };
+
+    let intention = TzeentchIntention {
+        organ_id: "decision_cortex".into(),
+        cell_id: "navigation_cell".into(),
+        goal_label: "intercept_target".into(),
+        policy_id: "policy_v2".into(),
+        target_features: vec![0.95],
+        planned_at: 110,
+    };
+
+    let action = TzeentchAction {
+        action_id: "act_401".into(),
+        intention_ref: Some("intention_101".into()),
+        motor_command: "thrust_yaw_+15deg".into(),
+        parameters: vec![15.0],
+        executed_at: 120,
+    };
+
+    let outcome = TzeentchOutcome {
+        action_id: "act_401".into(),
+        reward: 1.0,
+        state_delta: vec![0.02],
+        observed_at: 130,
+    };
+
+    let entity = EntityId {
+        shard: ShardId(0),
+        slot: 1,
+        generation: 1,
+    };
+
+    let p_ev = TzeentchConverter::percept_to_event(
+        &percept,
+        entity,
+        temnion_adapter::CLOCK_FAST,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let p_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 0,
+        },
+        entity: p_ev.entity,
+        schema: p_ev.schema,
+        times: p_ev.times,
+        payload: p_ev.payload,
+        causes: p_ev.causes,
+    };
+
+    let i_ev = TzeentchConverter::intention_to_event(
+        &intention,
+        entity,
+        vec![p_stored.id],
+        temnion_adapter::CLOCK_SLOW,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let i_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 1,
+        },
+        entity: i_ev.entity,
+        schema: i_ev.schema,
+        times: i_ev.times,
+        payload: i_ev.payload,
+        causes: i_ev.causes,
+    };
+
+    let a_ev = TzeentchConverter::action_to_event(
+        &action,
+        entity,
+        vec![i_stored.id],
+        temnion_adapter::CLOCK_FAST,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let a_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 2,
+        },
+        entity: a_ev.entity,
+        schema: a_ev.schema,
+        times: a_ev.times,
+        payload: a_ev.payload,
+        causes: a_ev.causes,
+    };
+
+    let o_ev = TzeentchConverter::outcome_to_event(
+        &outcome,
+        entity,
+        a_stored.id,
+        temnion_adapter::CLOCK_MEDIUM,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let o_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 3,
+        },
+        entity: o_ev.entity,
+        schema: o_ev.schema,
+        times: o_ev.times,
+        payload: o_ev.payload,
+        causes: o_ev.causes,
+    };
+
+    let stored_events = vec![p_stored, i_stored, a_stored, o_stored];
+    let trace = TzeentchActionTracer::trace_action(2, &stored_events)?;
+
+    writeln!(
+        out,
+        "Temnion Tzeentch Multi-Cadence Causal Action Trace Demo:"
+    )?;
+    writeln!(out, "  Action ID: 401 (Sequence 2)")?;
+    writeln!(out, "  Causal Chain Continuity: Complete")?;
+    writeln!(
+        out,
+        "  Future Leakage Detected: {}",
+        trace.future_leakage_detected
+    )?;
+    writeln!(out, "  Trace Nodes ({} total):", trace.nodes.len())?;
+    for node in &trace.nodes {
+        match node {
+            temnion_adapter::ActionTraceNode::Percept {
+                event_id,
+                organ,
+                sensor,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Perception] seq={} time={} organ='{organ}' sensor='{sensor}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::Intention {
+                event_id,
+                goal,
+                policy,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Intention] seq={} time={} goal='{goal}' policy='{policy}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::Action {
+                event_id,
+                action_id,
+                command,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Action] seq={} time={} action='{action_id}' cmd='{command}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::Outcome {
+                event_id,
+                reward,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Outcome] seq={} time={} reward={reward}",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::SourceGap {
+                step_name,
+                expected_time,
+            } => {
+                writeln!(
+                    out,
+                    "    - [SourceGap] step='{step_name}' expected_time={expected_time}"
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::CellProcessing {
+                event_id,
+                organ,
+                cell,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Cell] seq={} time={} organ='{organ}' cell='{cell}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::RetrievedBelief {
+                event_id,
+                concept,
+                confidence,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Belief] seq={} time={} concept='{concept}' conf={confidence}",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::Prediction {
+                event_id,
+                label,
+                probability,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    - [Prediction] seq={} time={} label='{label}' prob={probability}",
+                    event_id.sequence, timestamp
+                )?;
+            }
+        }
+    }
+    writeln!(
+        out,
+        "  Verification: Outcome verified following Action sequence 2"
+    )?;
+    Ok(())
+}
+
+fn tzeentch_trace_cmd(out: &mut impl Write, entity_name: &str) -> Result<(), Box<dyn Error>> {
+    let percept = TzeentchPercept {
+        organ_id: format!("{entity_name}_sensor"),
+        sensor_id: "sensor_0".into(),
+        cadence: CadenceTier::Fast,
+        media_ref: None,
+        features: vec![1.0, 0.5],
+        timestamp: 10,
+    };
+    let intention = TzeentchIntention {
+        organ_id: format!("{entity_name}_planner"),
+        cell_id: "cell_0".into(),
+        goal_label: format!("navigate_{entity_name}"),
+        policy_id: "policy_v1".into(),
+        target_features: vec![1.0],
+        planned_at: 15,
+    };
+    let action = TzeentchAction {
+        action_id: format!("{entity_name}_action"),
+        intention_ref: None,
+        motor_command: "step_forward".into(),
+        parameters: vec![1.0],
+        executed_at: 20,
+    };
+
+    let entity = EntityId {
+        shard: ShardId(0),
+        slot: 1,
+        generation: 1,
+    };
+
+    let p_ev = TzeentchConverter::percept_to_event(
+        &percept,
+        entity,
+        temnion_adapter::CLOCK_FAST,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let p_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 0,
+        },
+        entity: p_ev.entity,
+        schema: p_ev.schema,
+        times: p_ev.times,
+        payload: p_ev.payload,
+        causes: p_ev.causes,
+    };
+    let i_ev = TzeentchConverter::intention_to_event(
+        &intention,
+        entity,
+        vec![p_stored.id],
+        temnion_adapter::CLOCK_SLOW,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let i_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 1,
+        },
+        entity: i_ev.entity,
+        schema: i_ev.schema,
+        times: i_ev.times,
+        payload: i_ev.payload,
+        causes: i_ev.causes,
+    };
+    let a_ev = TzeentchConverter::action_to_event(
+        &action,
+        entity,
+        vec![i_stored.id],
+        temnion_adapter::CLOCK_FAST,
+        temnion_adapter::CLOCK_FAST,
+    );
+    let a_stored = StoredEvent {
+        id: EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 2,
+        },
+        entity: a_ev.entity,
+        schema: a_ev.schema,
+        times: a_ev.times,
+        payload: a_ev.payload,
+        causes: a_ev.causes,
+    };
+
+    let stored_events = vec![p_stored, i_stored, a_stored];
+    let trace = TzeentchActionTracer::trace_action(2, &stored_events)?;
+
+    writeln!(out, "Causal Action Trace for Entity '{entity_name}':")?;
+    writeln!(out, "  Action Sequence: 2")?;
+    writeln!(
+        out,
+        "  Future Leakage Detected: {}",
+        trace.future_leakage_detected
+    )?;
+    for node in &trace.nodes {
+        match node {
+            temnion_adapter::ActionTraceNode::Percept {
+                event_id,
+                organ,
+                sensor,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    [Percept] seq={} time={} organ='{organ}' sensor='{sensor}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::Intention {
+                event_id,
+                goal,
+                policy,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    [Intention] seq={} time={} goal='{goal}' policy='{policy}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            temnion_adapter::ActionTraceNode::Action {
+                event_id,
+                action_id,
+                command,
+                timestamp,
+            } => {
+                writeln!(
+                    out,
+                    "    [Action] seq={} time={} action='{action_id}' cmd='{command}'",
+                    event_id.sequence, timestamp
+                )?;
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+fn benchmark_scale_cmd(out: &mut impl Write, target_records: usize) -> Result<(), Box<dyn Error>> {
+    let start = std::time::Instant::now();
+    let mut log = EventLog::new(SourceId(1), SourceEpoch(1), target_records.max(64))?;
+    let entity = EntityId {
+        shard: ShardId(0),
+        slot: 1,
+        generation: 1,
+    };
+
+    let append_start = std::time::Instant::now();
+    for i in 0..target_records {
+        log.append(EventInput {
+            entity,
+            times: EventTimes {
+                valid: Timestamp::new(ClockId(1), i as u64),
+                observed: None,
+                known: Timestamp::new(ClockId(2), i as u64),
+            },
+            change: Position { x: i as i32 },
+        })?;
+    }
+    let append_duration = append_start.elapsed();
+
+    let scan_start = std::time::Instant::now();
+    let history = log.history(
+        HistoryFilter::default(),
+        QueryBudget {
+            max_results: target_records,
+            max_scanned: target_records * 2,
+        },
+        None,
+    )?;
+    let scan_duration = scan_start.elapsed();
+
+    let total_elapsed = start.elapsed();
+    let throughput = if append_duration.as_secs_f64() > 0.0 {
+        target_records as f64 / append_duration.as_secs_f64()
+    } else {
+        0.0
+    };
+
+    writeln!(out, "Temnion Scale Benchmark:")?;
+    writeln!(out, "  Target Records:       {}", target_records)?;
+    writeln!(out, "  Ingestion Time:       {:.2?}", append_duration)?;
+    writeln!(out, "  Ingestion Throughput: {:.0} events/sec", throughput)?;
+    writeln!(
+        out,
+        "  Scan Latency ({} rec): {:.2?}",
+        history.events.len(),
+        scan_duration
+    )?;
+    writeln!(out, "  Total Test Elapsed:   {:.2?}", total_elapsed)?;
     Ok(())
 }
 

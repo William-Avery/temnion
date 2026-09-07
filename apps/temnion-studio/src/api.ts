@@ -88,6 +88,47 @@ export interface CausalTrace {
   truncated: boolean;
 }
 
+export interface TzeentchSummary {
+  organismId: string;
+  organs: string[];
+  cells: string[];
+  migrationMode: string;
+  mirrorEnqueued: number;
+  mirrorDrained: number;
+  dropCount: number;
+}
+
+export interface TzeentchCadenceStats {
+  fastHz: number;
+  fastTicks: number;
+  mediumHz: number;
+  mediumTicks: number;
+  slowHz: number;
+  slowTicks: number;
+  backgroundHz: number;
+  backgroundTicks: number;
+  dropCount: number;
+  queuePressure: number;
+}
+
+export interface ActionTraceNode {
+  kind: string;
+  eventId?: string;
+  label: string;
+  detail: string;
+  timestamp: number;
+  confidence?: number;
+  isGap: boolean;
+}
+
+export interface ActionTrace {
+  actionEventId: string;
+  nodes: ActionTraceNode[];
+  edges: string[];
+  futureLeakageDetected: boolean;
+  totalCauses: number;
+}
+
 export const browserStatus: EngineStatus = {
   connected: false,
   eventCount: 0,
@@ -103,6 +144,9 @@ export const browserStatus: EngineStatus = {
     "durable-append",
     "branch-inspection",
     "causal-trace",
+    "tzeentch-explorer",
+    "causal-action-trace",
+    "cadence-scheduling",
   ],
 };
 
@@ -156,4 +200,61 @@ export function listBranches(): Promise<BranchInfo[]> {
 
 export function traceCausality(sequence: number, maxDepth: number): Promise<CausalTrace> {
   return nativeCommand("trace_causality", { sequence, maxDepth });
+}
+
+export function getTzeentchSummary(): Promise<TzeentchSummary> {
+  return isNativeRuntime
+    ? nativeCommand<TzeentchSummary>("get_tzeentch_summary")
+    : Promise.resolve({
+        organismId: "ORGX-Prime",
+        organs: ["VisualCortex", "MotorExecutive", "WorkingMemory", "WorldModel"],
+        cells: ["SensoryCell0", "FeatureAttn1", "PolicyCell2", "PredictionCell3"],
+        migrationMode: "ShadowMirror",
+        mirrorEnqueued: 128,
+        mirrorDrained: 128,
+        dropCount: 0,
+      });
+}
+
+export function getTzeentchCadenceStats(): Promise<TzeentchCadenceStats> {
+  return isNativeRuntime
+    ? nativeCommand<TzeentchCadenceStats>("get_tzeentch_cadence_stats")
+    : Promise.resolve({
+        fastHz: 120,
+        fastTicks: 12000,
+        mediumHz: 20,
+        mediumTicks: 2000,
+        slowHz: 1,
+        slowTicks: 100,
+        backgroundHz: 0.1,
+        backgroundTicks: 10,
+        dropCount: 0,
+        queuePressure: 0.01,
+      });
+}
+
+export function inspectTzeentchActionTrace(sequence: number): Promise<ActionTrace> {
+  return isNativeRuntime
+    ? nativeCommand<ActionTrace>("inspect_tzeentch_action_trace", { sequence })
+    : Promise.resolve({
+        actionEventId: "1:1:100",
+        nodes: [
+          { kind: "percept", label: "Percept (VisualCortex)", detail: "Sensor: Cam0", timestamp: 1000, isGap: false },
+          { kind: "cell", label: "Processing (ExecutiveOrgan)", detail: "Cell: PolicyCell2", timestamp: 1005, isGap: false },
+          { kind: "belief", label: "Belief (ObstacleAhead)", detail: "Confidence: 0.95", timestamp: 1008, confidence: 0.95, isGap: false },
+          { kind: "prediction", label: "Prediction (CollisionRisk)", detail: "Probability: 0.88", timestamp: 1010, confidence: 0.88, isGap: false },
+          { kind: "intention", label: "Intention (EvasiveManeuver)", detail: "Policy: PPO_v2", timestamp: 1012, isGap: false },
+          { kind: "action", label: "Action (Act_TurnRight)", detail: "Command: SteerAngle(+0.4rad)", timestamp: 1015, isGap: false },
+          { kind: "outcome", label: "Outcome Feedback", detail: "Reward: +1.00", timestamp: 1020, isGap: false },
+        ],
+        edges: ["1:1:96 -> 1:1:97", "1:1:97 -> 1:1:98", "1:1:98 -> 1:1:99", "1:1:99 -> 1:1:100", "1:1:100 -> 1:1:101"],
+        futureLeakageDetected: false,
+        totalCauses: 6,
+      });
+}
+
+export function setTzeentchMigrationMode(mode: string): Promise<string> {
+  return isNativeRuntime
+    ? nativeCommand<string>("set_tzeentch_migration_mode", { mode })
+    : Promise.resolve(mode);
 }

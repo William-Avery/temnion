@@ -3164,6 +3164,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "temnion-adapter"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "temnion-causal",
+ "temnion-core",
+ "temnion-eks",
+ "temnion-events",
+ "temnion-format",
+ "temnion-query",
+ "temnion-storage",
+]
+
+[[package]]
 name = "temnion-branch"
 version = "0.1.0"
 dependencies = [
@@ -3195,6 +3209,16 @@ dependencies = [
 [[package]]
 name = "temnion-core"
 version = "0.1.0"
+
+[[package]]
+name = "temnion-eks"
+version = "0.1.0"
+dependencies = [
+ "temnion-core",
+ "temnion-events",
+ "temnion-format",
+ "temnion-storage",
+]
 
 [[package]]
 name = "temnion-events"
@@ -3267,6 +3291,7 @@ dependencies = [
 name = "temnion-storage"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "fs2",
  "getrandom 0.2.17",
  "temnion-core",
@@ -3283,9 +3308,11 @@ dependencies = [
  "serde_json",
  "tauri",
  "tauri-build",
+ "temnion-adapter",
  "temnion-branch",
  "temnion-causal",
  "temnion-core",
+ "temnion-eks",
  "temnion-events",
  "temnion-format",
  "temnion-query",

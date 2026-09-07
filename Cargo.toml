@@ -20,6 +20,7 @@ members = [
     "crates/temnion-eks",
     "crates/temnion-transform",
     "crates/temnion-evolution",
+    "crates/temnion-adapter",
     "crates/temnion-bench",
     "apps/temnion-cli",
 ]
@@ -51,6 +52,7 @@ temnion-mcp = { path = "crates/temnion-mcp" }
 temnion-eks = { path = "crates/temnion-eks" }
 temnion-transform = { path = "crates/temnion-transform" }
 temnion-evolution = { path = "crates/temnion-evolution" }
+temnion-adapter = { path = "crates/temnion-adapter" }
 crc32fast = "1.4"
 fs2 = "0.4.3"
 getrandom = "0.2"

@@ -1,20 +1,22 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 [package]
-name = "temnion-storage"
+name = "temnion-adapter"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "Checksummed durable source logs and immutable TSF exports for Temnion"
+description = "Tzeentch consumer adapter, multi-cadence timing scheduler, and causal action tracer for Temnion"
 
 [dependencies]
 temnion-core.workspace = true
 temnion-events.workspace = true
 temnion-format.workspace = true
-temnion-index.workspace = true
+temnion-storage.workspace = true
+temnion-causal.workspace = true
+temnion-eks.workspace = true
+temnion-query.workspace = true
 crc32fast.workspace = true
-fs2.workspace = true
-getrandom.workspace = true
 
 [lints]
 workspace = true
