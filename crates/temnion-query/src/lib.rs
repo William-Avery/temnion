@@ -81,7 +81,7 @@ impl fmt::Display for Literal {
 }
 
 /// Binary operators for scalar expressions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum BinaryOp {
     Eq,
     NotEq,
@@ -199,6 +199,17 @@ impl Expr {
                     },
                 }
             }
+        }
+    }
+}
+
+impl fmt::Display for Expr {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Literal(lit) => write!(f, "{lit}"),
+            Self::Field(name) => write!(f, "{name}"),
+            Self::Not(inner) => write!(f, "NOT({inner})"),
+            Self::Binary { op, left, right } => write!(f, "({left} {op} {right})"),
         }
     }
 }
@@ -1182,42 +1193,7 @@ fn split_sql_and(s: &str) -> Vec<String> {
 }
 
 fn parse_sql_expr(s: &str) -> Result<Expr, QueryError> {
-    let ops = [
-        ("<>", BinaryOp::NotEq),
-        ("!=", BinaryOp::NotEq),
-        ("<=", BinaryOp::Lte),
-        (">=", BinaryOp::Gte),
-        ("==", BinaryOp::Eq),
-        ("=", BinaryOp::Eq),
-        ("<", BinaryOp::Lt),
-        (">", BinaryOp::Gt),
-    ];
-
-    for (op_str, op) in ops {
-        if let Some((left, right)) = s.split_once(op_str) {
-            let left_field = left.trim().to_string();
-            let right_val = right.trim().trim_matches('\'').trim_matches('"');
-            let literal = if let Ok(i) = right_val.parse::<i64>() {
-                Literal::Int(i)
-            } else if let Ok(f) = right_val.parse::<f64>() {
-                Literal::Float(f)
-            } else if right_val.eq_ignore_ascii_case("true") {
-                Literal::Bool(true)
-            } else if right_val.eq_ignore_ascii_case("false") {
-                Literal::Bool(false)
-            } else {
-                Literal::String(right_val.to_string())
-            };
-
-            return Ok(Expr::Binary {
-                op,
-                left: Box::new(Expr::Field(left_field)),
-                right: Box::new(Expr::Literal(literal)),
-            });
-        }
-    }
-
-    Ok(Expr::Field(s.trim().to_string()))
+    parse_expr(s)
 }
 
 fn parse_entity_id(s: &str) -> Result<EntityId, QueryError> {
@@ -1303,39 +1279,261 @@ fn parse_range(s: &str) -> Result<Range<Timestamp>, QueryError> {
 }
 
 fn parse_simple_expr(s: &str) -> Result<Expr, QueryError> {
-    let ops = [
-        ("==", BinaryOp::Eq),
-        ("!=", BinaryOp::NotEq),
-        ("<=", BinaryOp::Lte),
-        (">=", BinaryOp::Gte),
-        ("<", BinaryOp::Lt),
-        (">", BinaryOp::Gt),
-    ];
+    parse_expr(s)
+}
 
-    for (op_str, op) in ops {
-        if let Some((left, right)) = s.split_once(op_str) {
-            let left_field = left.trim().to_string();
-            let right_val = right.trim();
-            let literal = if let Ok(i) = right_val.parse::<i64>() {
-                Literal::Int(i)
-            } else if let Ok(f) = right_val.parse::<f64>() {
-                Literal::Float(f)
-            } else if right_val == "true" {
-                Literal::Bool(true)
-            } else if right_val == "false" {
-                Literal::Bool(false)
+/// Strongly typed recursive-descent scalar expression parser (M16/M22/M30).
+pub fn parse_expr(input: &str) -> Result<Expr, QueryError> {
+    let tokens = tokenize_expr(input)?;
+    if tokens.is_empty() {
+        return Err(QueryError::ParseError("Empty expression".to_string()));
+    }
+    let mut pos = 0;
+    let expr = parse_or_expr(&tokens, &mut pos)?;
+    if pos < tokens.len() {
+        return Err(QueryError::ParseError(format!(
+            "Unexpected trailing token at position {pos}: {:?}",
+            tokens[pos]
+        )));
+    }
+    Ok(expr)
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum ExprToken {
+    Ident(String),
+    Int(i64),
+    Float(f64),
+    StringLit(String),
+    Bool(bool),
+    Op(BinaryOp),
+    Not,
+    LParen,
+    RParen,
+}
+
+fn tokenize_expr(input: &str) -> Result<Vec<ExprToken>, QueryError> {
+    let mut tokens = Vec::new();
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+    let mut i = 0;
+
+    while i < len {
+        let c = chars[i];
+        if c.is_whitespace() {
+            i += 1;
+        } else if c == '(' {
+            tokens.push(ExprToken::LParen);
+            i += 1;
+        } else if c == ')' {
+            tokens.push(ExprToken::RParen);
+            i += 1;
+        } else if c == '!' {
+            if i + 1 < len && chars[i + 1] == '=' {
+                tokens.push(ExprToken::Op(BinaryOp::NotEq));
+                i += 2;
             } else {
-                Literal::String(right_val.trim_matches('"').to_string())
-            };
-
-            return Ok(Expr::Binary {
-                op,
-                left: Box::new(Expr::Field(left_field)),
-                right: Box::new(Expr::Literal(literal)),
-            });
+                tokens.push(ExprToken::Not);
+                i += 1;
+            }
+        } else if c == '=' {
+            if i + 1 < len && chars[i + 1] == '=' {
+                tokens.push(ExprToken::Op(BinaryOp::Eq));
+                i += 2;
+            } else {
+                tokens.push(ExprToken::Op(BinaryOp::Eq));
+                i += 1;
+            }
+        } else if c == '<' {
+            if i + 1 < len && chars[i + 1] == '=' {
+                tokens.push(ExprToken::Op(BinaryOp::Lte));
+                i += 2;
+            } else if i + 1 < len && chars[i + 1] == '>' {
+                tokens.push(ExprToken::Op(BinaryOp::NotEq));
+                i += 2;
+            } else {
+                tokens.push(ExprToken::Op(BinaryOp::Lt));
+                i += 1;
+            }
+        } else if c == '>' {
+            if i + 1 < len && chars[i + 1] == '=' {
+                tokens.push(ExprToken::Op(BinaryOp::Gte));
+                i += 2;
+            } else {
+                tokens.push(ExprToken::Op(BinaryOp::Gt));
+                i += 1;
+            }
+        } else if c == '&' && i + 1 < len && chars[i + 1] == '&' {
+            tokens.push(ExprToken::Op(BinaryOp::And));
+            i += 2;
+        } else if c == '|' && i + 1 < len && chars[i + 1] == '|' {
+            tokens.push(ExprToken::Op(BinaryOp::Or));
+            i += 2;
+        } else if c == '\'' || c == '"' {
+            let quote = c;
+            i += 1;
+            let mut s = String::new();
+            while i < len && chars[i] != quote {
+                s.push(chars[i]);
+                i += 1;
+            }
+            if i >= len {
+                return Err(QueryError::ParseError(
+                    "Unterminated string literal".to_string(),
+                ));
+            }
+            i += 1; // skip closing quote
+            tokens.push(ExprToken::StringLit(s));
+        } else if c.is_ascii_digit() {
+            let start = i;
+            let mut has_dot = false;
+            while i < len && (chars[i].is_ascii_digit() || (chars[i] == '.' && !has_dot)) {
+                if chars[i] == '.' {
+                    has_dot = true;
+                }
+                i += 1;
+            }
+            let num_str: String = chars[start..i].iter().collect();
+            if has_dot {
+                let f: f64 = num_str
+                    .parse()
+                    .map_err(|e| QueryError::ParseError(format!("Invalid float: {e}")))?;
+                tokens.push(ExprToken::Float(f));
+            } else {
+                let n: i64 = num_str
+                    .parse()
+                    .map_err(|e| QueryError::ParseError(format!("Invalid integer: {e}")))?;
+                tokens.push(ExprToken::Int(n));
+            }
+        } else if c.is_alphabetic() || c == '_' {
+            let start = i;
+            while i < len && (chars[i].is_alphanumeric() || chars[i] == '_' || chars[i] == '.') {
+                i += 1;
+            }
+            let word: String = chars[start..i].iter().collect();
+            match word.to_lowercase().as_str() {
+                "true" => tokens.push(ExprToken::Bool(true)),
+                "false" => tokens.push(ExprToken::Bool(false)),
+                "not" => tokens.push(ExprToken::Not),
+                "and" => tokens.push(ExprToken::Op(BinaryOp::And)),
+                "or" => tokens.push(ExprToken::Op(BinaryOp::Or)),
+                _ => tokens.push(ExprToken::Ident(word)),
+            }
+        } else {
+            return Err(QueryError::ParseError(format!(
+                "Unexpected character '{c}' in expression"
+            )));
         }
     }
+    Ok(tokens)
+}
 
-    // Default to field exists / truthy
-    Ok(Expr::Field(s.trim().to_string()))
+fn parse_or_expr(tokens: &[ExprToken], pos: &mut usize) -> Result<Expr, QueryError> {
+    let mut left = parse_and_expr(tokens, pos)?;
+    while *pos < tokens.len() {
+        if let ExprToken::Op(BinaryOp::Or) = &tokens[*pos] {
+            *pos += 1;
+            let right = parse_and_expr(tokens, pos)?;
+            left = Expr::Binary {
+                op: BinaryOp::Or,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        } else {
+            break;
+        }
+    }
+    Ok(left)
+}
+
+fn parse_and_expr(tokens: &[ExprToken], pos: &mut usize) -> Result<Expr, QueryError> {
+    let mut left = parse_cmp_expr(tokens, pos)?;
+    while *pos < tokens.len() {
+        if let ExprToken::Op(BinaryOp::And) = &tokens[*pos] {
+            *pos += 1;
+            let right = parse_cmp_expr(tokens, pos)?;
+            left = Expr::Binary {
+                op: BinaryOp::And,
+                left: Box::new(left),
+                right: Box::new(right),
+            };
+        } else {
+            break;
+        }
+    }
+    Ok(left)
+}
+
+fn parse_cmp_expr(tokens: &[ExprToken], pos: &mut usize) -> Result<Expr, QueryError> {
+    let left = parse_unary_expr(tokens, pos)?;
+    if *pos < tokens.len() {
+        if let ExprToken::Op(op) = &tokens[*pos] {
+            if *op != BinaryOp::And && *op != BinaryOp::Or {
+                let bin_op = *op;
+                *pos += 1;
+                let right = parse_unary_expr(tokens, pos)?;
+                return Ok(Expr::Binary {
+                    op: bin_op,
+                    left: Box::new(left),
+                    right: Box::new(right),
+                });
+            }
+        }
+    }
+    Ok(left)
+}
+
+fn parse_unary_expr(tokens: &[ExprToken], pos: &mut usize) -> Result<Expr, QueryError> {
+    if *pos < tokens.len() && tokens[*pos] == ExprToken::Not {
+        *pos += 1;
+        let inner = parse_unary_expr(tokens, pos)?;
+        return Ok(Expr::Not(Box::new(inner)));
+    }
+    parse_primary_expr(tokens, pos)
+}
+
+fn parse_primary_expr(tokens: &[ExprToken], pos: &mut usize) -> Result<Expr, QueryError> {
+    if *pos >= tokens.len() {
+        return Err(QueryError::ParseError(
+            "Unexpected end of expression".to_string(),
+        ));
+    }
+    match &tokens[*pos] {
+        ExprToken::LParen => {
+            *pos += 1;
+            let expr = parse_or_expr(tokens, pos)?;
+            if *pos >= tokens.len() || tokens[*pos] != ExprToken::RParen {
+                return Err(QueryError::ParseError(
+                    "Missing closing parenthesis ')'".to_string(),
+                ));
+            }
+            *pos += 1;
+            Ok(expr)
+        }
+        ExprToken::Bool(b) => {
+            *pos += 1;
+            Ok(Expr::Literal(Literal::Bool(*b)))
+        }
+        ExprToken::Int(i) => {
+            *pos += 1;
+            Ok(Expr::Literal(Literal::Int(*i)))
+        }
+        ExprToken::Float(f) => {
+            *pos += 1;
+            Ok(Expr::Literal(Literal::Float(*f)))
+        }
+        ExprToken::StringLit(s) => {
+            let val = s.clone();
+            *pos += 1;
+            Ok(Expr::Literal(Literal::String(val)))
+        }
+        ExprToken::Ident(s) => {
+            let val = s.clone();
+            *pos += 1;
+            Ok(Expr::Field(val))
+        }
+        other => Err(QueryError::ParseError(format!(
+            "Unexpected token: {other:?}"
+        ))),
+    }
 }

@@ -84,6 +84,7 @@ dependencies = [
  "temnion-causal",
  "temnion-codec",
  "temnion-core",
+ "temnion-eks",
  "temnion-events",
  "temnion-flight",
  "temnion-format",
@@ -96,6 +97,7 @@ dependencies = [
  "temnion-schema",
  "temnion-state",
  "temnion-storage",
+ "temnion-transform",
 ]
 
 [[package]]
@@ -109,6 +111,16 @@ dependencies = [
 [[package]]
 name = "temnion-core"
 version = "0.1.0"
+
+[[package]]
+name = "temnion-eks"
+version = "0.1.0"
+dependencies = [
+ "temnion-core",
+ "temnion-events",
+ "temnion-format",
+ "temnion-storage",
+]
 
 [[package]]
 name = "temnion-events"
@@ -154,10 +166,12 @@ dependencies = [
  "temnion-branch",
  "temnion-causal",
  "temnion-core",
+ "temnion-eks",
  "temnion-format",
  "temnion-protocol",
  "temnion-query",
  "temnion-storage",
+ "temnion-transform",
 ]
 
 [[package]]
@@ -236,6 +250,15 @@ dependencies = [
  "temnion-events",
  "temnion-format",
  "temnion-index",
+]
+
+[[package]]
+name = "temnion-transform"
+version = "0.1.0"
+dependencies = [
+ "temnion-core",
+ "temnion-eks",
+ "temnion-query",
 ]
 
 [[package]]

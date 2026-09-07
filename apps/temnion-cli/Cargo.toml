@@ -28,6 +28,8 @@ temnion-query.workspace = true
 temnion-protocol.workspace = true
 temnion-flight.workspace = true
 temnion-mcp.workspace = true
+temnion-eks.workspace = true
+temnion-transform.workspace = true
 
 [lints]
 workspace = true

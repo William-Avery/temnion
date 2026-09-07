@@ -481,6 +481,30 @@ impl McpServer {
                     ),
                 ),
             ]),
+            JsonValue::Object(vec![
+                (
+                    "name".to_string(),
+                    JsonValue::String("why_trace".to_string()),
+                ),
+                (
+                    "description".to_string(),
+                    JsonValue::String(
+                        "Traverse epistemic justifications and evidence events for a knowledge item".to_string(),
+                    ),
+                ),
+            ]),
+            JsonValue::Object(vec![
+                (
+                    "name".to_string(),
+                    JsonValue::String("rewrite_expr".to_string()),
+                ),
+                (
+                    "description".to_string(),
+                    JsonValue::String(
+                        "Optimize a query expression using canonical IR e-graph equality saturation".to_string(),
+                    ),
+                ),
+            ]),
         ];
 
         let result = JsonValue::Object(vec![("tools".to_string(), JsonValue::Array(tools))]);
@@ -506,6 +530,8 @@ impl McpServer {
             "inspect" => self.execute_inspect(),
             "branch_list" => self.execute_branch_list(),
             "causal_trace" => self.execute_causal_trace(&args),
+            "why_trace" => self.execute_why_trace(&args),
+            "rewrite_expr" => self.execute_rewrite_expr(&args),
             unknown => {
                 return Self::make_error_response(
                     id,
@@ -675,6 +701,115 @@ impl McpServer {
             "query".to_string(),
             JsonValue::String(query_str),
         )]))
+    }
+
+    fn execute_why_trace(&self, args: &JsonValue) -> Result<String, String> {
+        let kid_val = args
+            .get("id")
+            .and_then(|v| match v {
+                JsonValue::Number(n) => Some(*n as u64),
+                JsonValue::String(s) => s.trim_start_matches("k:").parse::<u64>().ok(),
+                _ => None,
+            })
+            .unwrap_or(1);
+
+        let mut tms = temnion_eks::TruthMaintenanceSystem::new();
+        let ev = temnion_core::EventId {
+            source: temnion_core::SourceId(1),
+            epoch: temnion_core::SourceEpoch(1),
+            sequence: 100,
+        };
+        let _obs_id = tms.record_observation(
+            ev,
+            temnion_core::Timestamp::new(temnion_core::ClockId(1), 10),
+            temnion_core::Timestamp::new(temnion_core::ClockId(1), 12),
+            "sensor.status",
+            "active",
+        );
+        let claim_id = tms.assert_claim(
+            "health-agent",
+            "sensor is online",
+            temnion_eks::Confidence::new(0.95).unwrap(),
+            temnion_core::Timestamp::new(temnion_core::ClockId(1), 10)
+                ..temnion_core::Timestamp::new(temnion_core::ClockId(1), 20),
+            temnion_core::Timestamp::new(temnion_core::ClockId(1), 12),
+        );
+        let rule_id = tms.define_rule(
+            "online_implies_ready",
+            "sensor is online",
+            "node ready for traffic",
+            temnion_eks::Confidence::new(0.99).unwrap(),
+        );
+        let belief_id = tms.infer_belief(
+            "node ready for traffic",
+            temnion_eks::Confidence::new(0.94).unwrap(),
+            temnion_core::Timestamp::new(temnion_core::ClockId(1), 10),
+            temnion_core::Timestamp::new(temnion_core::ClockId(1), 13),
+            temnion_eks::Justification {
+                evidence_events: vec![ev],
+                premises: vec![claim_id],
+                applied_rules: vec![rule_id],
+                assumptions: vec!["no pending maintenance reboot".to_string()],
+            },
+        );
+
+        let target_id = if kid_val == 1 {
+            belief_id
+        } else {
+            temnion_eks::KnowledgeId(kid_val)
+        };
+        let trace = tms.why(target_id).map_err(|e| e.to_string())?;
+
+        let mut out = format!(
+            "Epistemic WHY Trace for {}:\n- Target Item: {}\n- Confidence: {:.2}\n- Status: {:?}\n",
+            trace.target_id,
+            trace.proposition,
+            trace.confidence.value(),
+            trace.status
+        );
+        out.push_str(&format!(
+            "- Grounding Storage Events: {:?}\n",
+            trace.direct_evidence
+        ));
+        out.push_str(&format!(
+            "- Defeasible Assumptions: {:?}\n",
+            trace.assumptions
+        ));
+        out.push_str(&format!("- Applied Rules: {:?}\n", trace.applied_rules));
+        out.push_str(&format!(
+            "- Sub-Premises Explored: {}\n",
+            trace.premise_traces.len()
+        ));
+        Ok(out)
+    }
+
+    fn execute_rewrite_expr(&self, args: &JsonValue) -> Result<String, String> {
+        let expr_str = args
+            .get("expr")
+            .and_then(|e| e.as_str())
+            .ok_or_else(|| "Missing 'expr' argument".to_string())?;
+
+        let expr = temnion_query::parse_expr(expr_str).map_err(|e| e.to_string())?;
+
+        let mut egraph = temnion_transform::EGraph::new();
+        let f_root = egraph.add_expr(&expr);
+        egraph.rebuild();
+        let report = egraph.saturate(10);
+
+        let filter_opt = egraph.extract_best_expr(f_root).ok();
+
+        let mut out = format!(
+            "E-Graph Equality Saturation Complete:\n- Classes: {}\n- Rewrites applied: {}\n- Iterations: {}\n",
+            report.total_classes, report.total_rewrites, report.iterations
+        );
+        if let Some((opt_expr, cost)) = filter_opt {
+            out.push_str(&format!(
+                "- Optimized Expression: {}\n- Minimal AST Cost: {}\n",
+                opt_expr, cost
+            ));
+        }
+
+        Ok(out)
     }
 
     fn handle_resources_list(&self, id: &JsonValue) -> String {

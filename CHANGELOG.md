@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased - Epistemic Knowledge Store (EKS) and transformation engine (M25–M30)
+
+- Added Epistemic Knowledge Store (`temnion-eks`) (M25–M28):
+  - **Knowledge Primitives (M25):** Typed epistemic representations (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`) referencing authoritative storage `EventId`s with bounded confidence scores in $[0.0, 1.0]$.
+  - **Truth Maintenance System & Provenance (M26):** Non-destructive justification network, contradiction detection between competing propositions, recursive non-destructive retraction cascading, and `WHY` provenance query traversal (`WhyTrace`) tracing beliefs back to ground truth WAL events and applied rules.
+  - **Predictive Knowledge & Calibration (M27):** `PredictionLedger` recording entity prediction horizons, empirical outcome resolution (`Matched`, `Refuted`, `Inconclusive`), and Brier score calibration with strict zero-future-leakage guarantees (filtering out any predictions or observations after $T_k$).
+  - **Tiered Knowledge Store (M28):** Three-tier memory management (`Active`, `Reference`, `Archive`) with access-frequency eviction and episode pattern consolidation.
+- Added Deterministic Transformation Engine and Canonical IR E-Graphs (`temnion-transform`) (M29–M30):
+  - **Transformation Engine (M29):** Versioned manifests (`TransformationManifest`), declared signatures, precondition enforcement, CPU step and memory allocation metering (`ResourceMeter`), and immutable lineage logging (`LineageRecord`) with execution receipts.
+  - **Canonical IR E-Graphs (M30):** Equality saturation over canonical query IR (`Expr` and `LogicalPlan`), algebraic boolean identities, constant folding, scan filter simplification, and cycle-safe cost-based plan extraction using iterative Bellman-Ford relaxation.
+- Query and Parser Enhancements (`temnion-query`):
+  - Added recursive-descent expression parser `pub fn parse_expr` handling operator precedence (`OR`, `AND`, comparisons, `NOT`, literals, parenthesized subexpressions).
+  - Implemented `fmt::Display` and `Hash` for scalar query `Expr` and `BinaryOp`.
+- Interface Integrations:
+  - Added `why_trace` and `rewrite_expr` tools to Model Context Protocol server (`temnion-mcp`).
+  - Added `tem why-demo` and `tem rewrite-demo <expr>` commands to CLI (`temnion-cli`), and updated capabilities to advertise `"eks": true`, `"transformations": true`, and `"e-graphs": true`.
+- Published ADR 0012 documenting the Epistemic Knowledge Store, truth maintenance, and deterministic transformations.
+
 ## Unreleased - initial Temnion Studio desktop slice (M23/M24 increment)
 
 - Replaced the static Studio mockup with a buildable React/TypeScript frontend.

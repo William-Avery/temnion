@@ -52,8 +52,17 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 - Initial Temnion Studio desktop slice using Tauri 2, Rust, React/TypeScript,
   TanStack Query and TanStack Table for real bounded local open/create, query,
   EXPLAIN, history, append, branch inspection and causal tracing flows.
+- Epistemic Knowledge Store (`temnion-eks`) with knowledge primitives (`Observation`,
+  `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance,
+  cascading non-destructive retraction, `WHY` provenance traversal, predictive
+  knowledge ledger with Brier score calibration, strict zero future leakage, and
+  tiered memory consolidation (`Active`, `Reference`, `Archive`).
+- Deterministic transformation engine and canonical IR e-graph optimizer (`temnion-transform`)
+  with versioned manifests, CPU/memory resource metering, immutable lineage logs,
+  equality saturation over query expressions and plans, algebraic rewrites, constant
+  folding, and cycle-safe cost-based plan extraction (M25–M30).
 - Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
-  causal-trace, inspect-summary, query, and explain commands.
+  causal-trace, inspect-summary, query, explain, why-demo, and rewrite-demo commands.
 
 This does **not** complete R0, R1 or R3: most T01 specifications, most A–L workloads,
 full N-D schemas, manifest-based lifecycle, `temniond`, complete Studio v1 flows,
@@ -143,8 +152,8 @@ desktop-remote-only substitute.
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
-| T14 — Knowledge, provenance and prediction | Future, after Gate A | Versioned Observation/Claim/Belief/Concept/Rule/Model/Skill, evidence references, dependencies/contradictions, confidence, valid/learned time, truth maintenance, predictions/outcomes/errors and WHY. Model manifests plus bounded isolated workers, deterministic fixture worker and at least one real adapter. |
-| T15 — Consolidation and transformations | Future; e-graphs candidate | Active/reference/archive knowledge, episode-to-pattern/concept/rule transformations, evidence-linked summaries and bounded working memory. Versioned types/preconditions/costs; handwritten Rust first. Adopt e-graphs only for a demonstrated equivalence task. |
+| T14 — Knowledge, provenance and prediction | Implemented (`temnion-eks`) | Versioned Observation/Claim/Belief/Concept/Rule/Model/Skill, evidence references, dependencies/contradictions, confidence, valid/learned time, non-destructive truth maintenance, prediction ledger with Brier score calibration, strict zero future leakage, and recursive WHY provenance traversal. |
+| T15 — Consolidation and transformations | Implemented (`temnion-eks`, `temnion-transform`) | Active/reference/archive tiered knowledge with capacity eviction, episode-to-pattern consolidation, metered deterministic transformations with CPU/memory tracking and lineage logs, and canonical query IR e-graph optimizer with equality saturation, constant folding, and cycle-safe plan extraction. |
 
 **Gate B** follows: held-out, time-correct evidence of consumer benefit with complete
 provenance and accounted active-memory/runtime cost. Exit: Tzeentch and a second
@@ -222,12 +231,12 @@ original files retain their historical names unchanged.
 | M22 | SQL compatibility | T12 | Canonical query IR lowering for standard SELECT/WHERE/LIMIT queries; equivalent to TemQL and Compact Tem across TNP, Flight, MCP, and CLI (`temnion-query`) |
 | M23 | Studio v1 | T13 | Initial buildable Windows slice with real bounded native database flows; full v1 and platform qualification remain future |
 | M24 | Documentation v1 | T00–T21, especially T13 | Foundation docs plus Studio setup/limits guide; grows with implemented features |
-| M25 | Knowledge primitives | T14 | Future after Gate A |
-| M26 | Provenance/truth maintenance | T14 | Future |
-| M27 | Predictive knowledge | T14 | Future |
-| M28 | Knowledge consolidation | T15 | Future |
-| M29 | Transformation engine | T15 | Future |
-| M30 | E-graphs/rewrite experiments | T15 | Future benchmark-gated candidate |
+| M25 | Knowledge primitives | T14 | Knowledge primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`) referencing authoritative storage `EventId`s with bounded confidence (`temnion-eks`) |
+| M26 | Provenance/truth maintenance | T14 | Non-destructive justification network, contradiction detection, cascading retraction, and recursive `why(id)` provenance traversal returning `WhyTrace` (`temnion-eks`) |
+| M27 | Predictive knowledge | T14 | `PredictionLedger` with empirical outcome matching, Brier score calibration, and strict zero-future-leakage guarantees (`temnion-eks`) |
+| M28 | Knowledge consolidation | T15 | Three-tier knowledge management (`Active`, `Reference`, `Archive`) with access-frequency eviction and episode pattern consolidation (`temnion-eks`) |
+| M29 | Transformation engine | T15 | Deterministic transformations with versioned manifests, typed signatures, preconditions, CPU/memory resource metering, and immutable lineage records (`temnion-transform`) |
+| M30 | E-graphs/rewrite experiments | T15 | Canonical query IR equality saturation (`EGraph`), algebraic boolean simplification, constant folding, scan filter simplification, and cycle-safe cost-based plan extraction (`temnion-transform`) |
 | M31 | Champion/challenger evolution | T16 | Future after Gate B |
 | M32 | Adaptive physical memory | T17 | Future candidates |
 | M33 | Adaptive lifecycle policies | T17 | Future candidates |

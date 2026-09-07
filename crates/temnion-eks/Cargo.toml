@@ -1,0 +1,17 @@
+[package]
+name = "temnion-eks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Epistemic Knowledge Store (EKS), truth maintenance, provenance, and predictive calibration for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-events.workspace = true
+temnion-format.workspace = true
+temnion-storage.workspace = true
+
+[lints]
+workspace = true

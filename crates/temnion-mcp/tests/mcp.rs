@@ -149,9 +149,21 @@ fn mcp_tools_and_database_execution() {
     let sql_explain_resp_str = server.handle_message(sql_explain_req).unwrap();
     assert!(sql_explain_resp_str.contains("StorageScan"));
 
+    // 4d. tools/call: why_trace
+    let why_req = r#"{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"why_trace","arguments":{"id":"k:1"}}}"#;
+    let why_resp_str = server.handle_message(why_req).unwrap();
+    assert!(why_resp_str.contains("Epistemic WHY Trace"));
+    assert!(why_resp_str.contains("Grounding Storage Events"));
+
+    // 4e. tools/call: rewrite_expr
+    let rewrite_req = r#"{"jsonrpc":"2.0","id":17,"method":"tools/call","params":{"name":"rewrite_expr","arguments":{"expr":"(status AND true) OR (status AND false)"}}}"#;
+    let rewrite_resp_str = server.handle_message(rewrite_req).unwrap();
+    assert!(rewrite_resp_str.contains("E-Graph Equality Saturation Complete"));
+    assert!(rewrite_resp_str.contains("Optimized Expression: status"));
+
     // 5. tools/call: unknown tool
     let bad_req =
-        r#"{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"non_existent_tool"}}"#;
+        r#"{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"non_existent_tool"}}"#;
     let bad_resp_str = server.handle_message(bad_req).unwrap();
     assert!(bad_resp_str.contains("-32601"));
 }

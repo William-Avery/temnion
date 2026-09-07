@@ -469,3 +469,28 @@ fn explain_and_query_cli_roundtrip() {
     let sql_query_text = String::from_utf8(sql_query_res.stdout).unwrap();
     assert_eq!(query_text, sql_query_text);
 }
+
+#[test]
+fn why_demo_and_rewrite_demo_cli_commands() {
+    let why_out = tem(&["why-demo"]);
+    assert!(
+        why_out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&why_out.stderr)
+    );
+    let why_text = String::from_utf8(why_out.stdout).unwrap();
+    assert!(why_text.contains("Epistemic Knowledge Store (EKS) WHY Trace:"));
+    assert!(why_text.contains("activate emergency secondary cooling"));
+    assert!(why_text.contains("Grounding WAL Events:"));
+
+    let rewrite_out = tem(&["rewrite-demo", "(status AND true) OR (status AND false)"]);
+    assert!(
+        rewrite_out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&rewrite_out.stderr)
+    );
+    let rewrite_text = String::from_utf8(rewrite_out.stdout).unwrap();
+    assert!(rewrite_text.contains("Canonical IR E-Graph Optimization:"));
+    assert!(rewrite_text.contains("Extracted Minimal Expression: status"));
+    assert!(rewrite_text.contains("Minimal AST Cost: 2"));
+}
