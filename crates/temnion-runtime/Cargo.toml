@@ -1,15 +1,12 @@
+# SPDX-License-Identifier: AGPL-3.0-only
 [package]
-name = "temnion-cli"
+name = "temnion-runtime"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "The tem command-line interface for Temnion"
-
-[[bin]]
-name = "tem"
-path = "src/main.rs"
+description = "Virtual-shard execution, background task DAGs, and tiered storage for Temnion"
 
 [dependencies]
 temnion-core.workspace = true
@@ -17,13 +14,8 @@ temnion-state.workspace = true
 temnion-events.workspace = true
 temnion-format.workspace = true
 temnion-storage.workspace = true
-temnion-schema.workspace = true
 temnion-codec.workspace = true
-temnion-replay.workspace = true
-temnion-causal.workspace = true
-temnion-branch.workspace = true
 temnion-index.workspace = true
-temnion-runtime.workspace = true
 
 [lints]
 workspace = true

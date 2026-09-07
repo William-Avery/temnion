@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased - N-D chunking/layouts and alternate projections (M6, M7)
+## Unreleased - Virtual shards, background task DAG, and storage hierarchy (M8, M9, M10)
+
+- Added single-writer virtual shards and deterministic merge coordinator to `temnion-runtime` (M8):
+  - Strongly-typed `VirtualShardId` and routing policies (`ShardRoutingPolicy::Modular`, `ShardRoutingPolicy::Explicit`).
+  - Thread-safe `VirtualShardPartition` with isolated partition logs and zero global mutable database write locks.
+  - Multi-shard query coordinator (`VirtualShardCoordinator`) providing deterministic total order sequence merging across partitions.
+- Added priority background task DAG and adaptive pressure throttling to `temnion-runtime` (M9):
+  - Priority classes (`TaskClass::Seal` weight 100, `Compress` weight 80, `Index` weight 60, `Summary` weight 40, `Maintenance` weight 20).
+  - Directed acyclic graph (`TaskDag`) with Kahn's cycle detection and priority-ordered execution scheduling (`ready_tasks`).
+  - `PressureController` monitoring memory and write queue depth, adaptively throttling or yielding background work under foreground pressure.
+- Added three-tier storage hierarchy to `temnion-runtime` (M10):
+  - Multi-tier classification (`StorageTier::HotDram`, `WarmMapped`, `ColdMedia`).
+  - `TieredStorageManager` tracking segment byte sizes and capacities, enforcing automated LRU eviction from hot to cold tiers, and promoting hot-accessed cold segments.
+- Registered capabilities `virtual-shards`, `background-dag`, and `storage-hierarchy` in `tem describe`.
+- Published ADR 0007 documenting virtual shards, background task DAG, and storage hierarchy.
+
+## N-D chunking/layouts and alternate projections (M6, M7)
 
 - Added space-filling curve and N-dimensional chunking layouts to `temnion-index` (M6):
   - 2D and 3D Morton (Z-order curve) bit-dilation encoding and decoding (`morton_encode_2d`, `morton_decode_2d`, `morton_encode_3d`, `morton_decode_3d`).
