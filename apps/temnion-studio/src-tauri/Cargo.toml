@@ -1,0 +1,18 @@
+[package]
+name = "temnion-studio-desktop"
+version = "0.1.0"
+edition = "2024"
+license = "AGPL-3.0-only"
+
+[dependencies]
+tauri = { version = "2.0.0", features = [] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+temnion-core = { path = "../../../crates/temnion-core" }
+temnion-storage = { path = "../../../crates/temnion-storage" }
+temnion-query = { path = "../../../crates/temnion-query" }
+temnion-branch = { path = "../../../crates/temnion-branch" }
+temnion-causal = { path = "../../../crates/temnion-causal" }
+
+[build-dependencies]
+tauri-build = "2.0.0"
