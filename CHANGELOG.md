@@ -1,6 +1,25 @@
 # Changelog
 
-## Unreleased - TNP wire protocol, local IPC, Arrow columnar layout, and C ABI (M18, M19)
+## Unreleased - Arrow Flight and Model Context Protocol (MCP) server (M20, M21)
+
+- Added authenticated Arrow Flight remote analytical transport to `temnion-flight` (M20):
+  - Flight message types (`FlightDescriptor`, `Ticket`, `FlightInfo`, `FlightEndpoint`, `FlightData`).
+  - Binary packet framing with magic `b"FLGT"`, CRC32C checksums, and 32 MB payload ceilings.
+  - Handshake session authentication (`FlightHandshakeRequest`, `FlightHandshakeResponse`).
+  - `FlightService` dispatcher implementing `get_flight_info`, streaming `do_get` columnar vector batches (`ColumnarBatch`), and `do_action` controls.
+- Added Model Context Protocol (MCP) JSON-RPC 2.0 control-plane server to `temnion-mcp` (M21):
+  - Lightweight, safe, self-contained JSON DOM parser and serializer.
+  - MCP protocol handling (`initialize`, `ping`).
+  - MCP tool catalog: `query`, `explain`, `inspect`, `branch_list`, `causal_trace` with bounded limits and truncation reporting.
+  - MCP resource providers: `temnion://database/capabilities`, `temnion://database/branches`, `temnion://database/summaries`.
+  - MCP prompt templates: `causal-investigation`, `timeline-audit`.
+  - `run_stdio` line-delimited stdio transport for direct CLI and AI agent attachment.
+- Updated `apps/temnion-cli`:
+  - Added `tem mcp [database-dir]` command for interactive MCP agent hosting.
+  - Registered capabilities `flight` and `mcp` in `tem describe` and updated `"mcp": true`.
+- Published ADR 0010 documenting Arrow Flight and Model Context Protocol (MCP).
+
+## TNP wire protocol, local IPC, Arrow columnar layout, and C ABI (M18, M19)
 
 - Added canonical Temnion Network Protocol (TNP) framing, capability negotiation, and query streaming to `temnion-protocol` (M18):
   - Binary packet framing (`TnpPacket`) with magic `b"TNPP"`, version 1, 16-byte fixed header, stream multiplexing identifiers, 16 MB maximum packet length, and trailing CRC32C checksum validation.
