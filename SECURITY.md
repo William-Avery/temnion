@@ -10,11 +10,12 @@ maintainer; no response-time or remediation SLA is promised.
 
 ## Current scope
 
-Temnion is a pre-production, volatile Rust foundation, not a hardened database
-service. There is no daemon, network listener, authentication service, disk
-format parser, plugin host, or durable storage in this deliverable. The active
-development line is the remediation target; no released-version support window
-or production security certification is established.
+Temnion is pre-production, not a hardened database service. It includes bounded
+WAL/TSF/schema parsers and a single-writer persistent source log as well as the
+original volatile components. There is no daemon, network listener,
+authentication service, or plugin host. The active development line is the
+remediation target; no released-version support window or production security
+certification is established.
 
 The current API forbids unsafe project code and uses checked identifiers,
 bounded record counts and scan/result budgets. Those measures are not a security
@@ -23,9 +24,18 @@ capacities are caller-configured, and this library does not isolate mutually
 untrusted tenants. Do not use it as the sole copy of important data or execute
 untrusted native code in its process.
 
+WAL/TSF CRC32 checksums detect accidental corruption; they are not cryptographic
+authentication against a writer who can modify the files. File locks coordinate
+cooperating processes, not hostile programs with the same filesystem privileges.
+The low-level append API treats payloads as opaque; callers must use schema
+validation when accepting typed input. Ordinary open does not silently truncate
+history; explicit tail recovery reports discarded bytes. Current TSF export
+retains the authoritative WAL rather than claiming safe compaction/retirement.
+
 ## Required boundaries for later releases
 
-These are architecture requirements, **not implemented security features**:
+These are architecture requirements to preserve and extend as features ship;
+bounded framing and explicit recovery exist, but remote/tenant enforcement does not:
 
 - No remote listener by default. Local IPC needs OS access controls; optional
   remote access needs authentication, authorization, TLS, and quotas.

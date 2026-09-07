@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0 foundation, M1 packed state, and a volatile M2 event-history subset.**
+**M0/M1 foundation, typed scalar M2 payloads, and the durable M4 source-log increment.**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -16,9 +16,13 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   filters, known-as-of selection and bounded snapshot pagination.
 - `tem version`, `describe`, scripted `demo`, and embedded examples.
 - A small seeded A/B/D baseline runner with simple reference paths.
+- Immutable validated scalar schemas, sparse mutations and canonical encodings.
+- Checksummed WAL batches, OS-synchronized receipts, process-restart recovery,
+  explicit incomplete-tail repair and standalone raw TSF v1 exports.
+- Durable CLI operations and a separate synchronized batch/reference benchmark.
 
 This does **not** complete R0 or R1: most T01 specifications, most A–L workloads,
-schema/delta systems, durable storage, recovery and replay are future work.
+full N-D schemas, manifest-based lifecycle, compression and replay remain future work.
 It does not complete M14 temporal reconstruction or M18 protocol negotiation.
 No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
 See [README](../README.md) for the implemented package inventory.
@@ -65,8 +69,8 @@ all workloads and Studio feasibility are not claimed complete by the initial CLI
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
-| T03 — Typed state and events | M1 and volatile M2 foundation | Generation-safe packed state; independent source event IDs and clock domains; later typed schemas/units/dimensions, deltas/change masks and complete input semantics. Test overflow, recycling, late/duplicate input and reference reads. |
-| T04 — WAL, TSF and recovery | Future | Durable receipts, raw lossless streams, checksummed/versioned formats, bounded sealing and recoverable manifest publication. Inject crashes at every append/sync/seal/publish boundary; reject corruption/truncation without unbounded allocation or loss of acknowledged data. |
+| T03 — Typed state and events | Packed state, scalar schemas and mutation encoding | Generation-safe state and typed scalar/nullable/unit metadata with sparse atomic apply; N-D schemas, persistent schema registration and full input semantics remain unfinished. |
+| T04 — WAL, TSF and recovery | Durable source-log increment | OS-synchronized batches, bounded checksummed WAL/TSF v1, strict recovery and immutable export are implemented. WAL remains authoritative; manifest activation/retirement and its fault matrix remain unfinished. |
 | T05 — Replay, branches and causality | Future | Checkpoints, deterministic providers with captured inputs/RNG, temporal reconstruction, causal edges and structurally shared branch manifests. Test exact supported replay, explicit nondeterminism boundaries, branch lifecycle and reader pins. |
 | T06 — Canonical query and languages | Future | Typed logical/physical IR, reference executor, predicates/projections/aggregations, subscriptions, prepared queries, budgets/cancellation/cursors, capability discovery and EXPLAIN. TemQL/Tem parsers must be equivalent to native execution and errors. |
 
@@ -161,9 +165,9 @@ original files retain their historical names unchanged.
 | --- | --- | --- | --- |
 | M0 | Specification and benchmark harness | T00–T02 | Foundation; full specs/A–L incomplete |
 | M1 | Packed live state | T03 | Implemented foundation |
-| M2 | Event history/deltas | T03 | Volatile typed append/query subset |
+| M2 | Event history/deltas | T03 | Volatile history plus typed scalar sparse mutation encoding; N-D engine/schema registry remains |
 | M3 | Deterministic reconstruction | T05 | Future |
-| M4 | Immutable segment format | T04 | Future |
+| M4 | Immutable segment format | T04 | Bounded raw TSF v1 and synchronized WAL/recovery; manifest lifecycle remains |
 | M5 | Compression framework | T07 | Future |
 | M6 | N-dimensional chunking/layouts | T07 | Future candidates |
 | M7 | Alternate projections | T07 | Future |

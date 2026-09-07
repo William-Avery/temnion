@@ -25,10 +25,11 @@ documentation carry current decisions; changes must retain source traceability.
 | Native protocol | **Temnion Protocol / TNP** |
 | Storage format | **Temnion Segment Format / TSF** |
 
-Only the foundation Rust packages and CLI exist now. Names do not reserve
-unimplemented capabilities. Future MCP names use `temnion.*` and resources use
-`temnion://`; exact suffixes, protocol framing, format magic and query grammar
-must be specified and tested before they become compatibility commitments.
+The current packages implement live state, scalar schemas, source-log persistence
+and a CLI. Names do not reserve unimplemented capabilities. WAL/batch and TSF v1
+magic/layouts are specified in [BINARY_FORMAT](BINARY_FORMAT.md). Future MCP names
+use `temnion.*` and resources use `temnion://`; protocol framing and query grammar
+still require their own specifications and compatibility fixtures.
 
 ## 2. Purpose and non-goals
 
@@ -74,9 +75,11 @@ temnion-state      temnion-events
       Rust standard library
 ```
 
-The current workspace uses edition 2024, resolver 3, MSRV 1.85 and pinned Rust
-1.85.0. Project source forbids unsafe code. No external Cargo dependencies,
-async runtime, network stack, GUI or model runtime are required.
+The diagram shows the original volatile components. The current workspace also
+has `temnion-schema`, `temnion-format`, and `temnion-storage` beneath the CLI.
+It uses edition 2024, resolver 3, MSRV 1.85 and pinned Rust 1.85.0. Project source
+forbids unsafe code. Explicit checksum/OS-lock/entropy dependencies support disk
+storage; there is no async runtime, network stack, GUI or model runtime.
 
 - `StateSlab<T>` stores dense live values with a separate slot directory,
   generation checks and explicit capacity. Swap removal can change iteration
@@ -90,22 +93,31 @@ async runtime, network stack, GUI or model runtime are required.
   inclusive known-as-of cutoff. Pages bound records returned and records scanned.
   Queries use linear scans, not an index. Continuations retain an in-process
   snapshot prefix; they are not TNP, serialized or authenticated cursors.
-- `tem` provides version, truthful JSON capabilities and a scripted deterministic
-  illustrative demo. `describe` explicitly reports `durable`, `server`, `temql`,
-  `tnp`, `tsf`, `mcp` and `studio` as `false`. It is not a database administration
-  client yet. The demo materializes arrival-order position and excludes late
-  evidence at a known-as-of cutoff; it does not implement replay.
-- The baseline runner exercises current-state access, volatile append, and
-  linear entity history; it does not establish a performance gate.
+- `temnion-schema` provides exact scalar values, immutable field metadata,
+  sparse mutations and bounded deterministic binary encoding. It is not a
+  persistent schema registry or a tensor/N-D schema engine.
+- `Store` locks one database directory, validates and synchronizes complete WAL
+  batches, recovers source-local identity/order, and exposes bounded disk-backed
+  history. Ordinary open rejects incomplete tails; authorized recovery reports
+  discarded bytes. TSF exports are immutable and the WAL remains authoritative.
+- `tem` provides truthful capabilities plus initialization, low-level append,
+  inspection, bounded history, explicit recovery and segment export/validation.
+  `durable` and `tsf` are true; `server`, `temql`, `tnp`, `mcp` and `studio` remain
+  false. Its original demo still uses volatile arrival-order state, not replay.
+- In-memory and explicitly selected durable batch baselines do not establish a
+  performance gate.
 
 `StateSlab` and `EventLog` are independent components: state changes and appends
 are separate calls, with no atomic combined state/history transaction. Capacity
 limits count slots/records, not bytes in arbitrary generic payloads. Callers must
-scope unique shard IDs and source/epoch incarnations; there is no durable identity
-allocator. There is no automatic reducer/materializer, external input deduplication,
-replay, persistence, schema registry, query IR, virtual-shard scheduler or production
-security boundary.
-See [ADR 0001](adr/0001-foundation-contracts.md) for precise current contracts.
+scope unique shard IDs and source/epoch incarnations for volatile components.
+`Store` separately allocates a persistent DatabaseId and resumes its durable
+source sequence. There is still no automatic reducer/materializer, external
+input deduplication, replay, persistent schema registry, shared query IR,
+virtual-shard scheduler or production security boundary.
+See [ADR 0001](adr/0001-foundation-contracts.md) for the original volatile
+contracts and [ADR 0002](adr/0002-durable-foundation.md) /
+[STORAGE](STORAGE.md) for the persistent increment.
 
 ## 4. Locked boundaries
 
@@ -130,7 +142,7 @@ These decisions require an explicit architecture revision to change:
 Current exclusive `&mut` APIs express single-owner mutation. They do not implement
 a multi-shard runtime, shared-memory transport, global snapshot, or queueing system.
 
-## 5. Exact history, durability and reconstruction — planned
+## 5. Exact history and durability — implemented increment and remaining design
 
 ### Identity, schema and temporal semantics
 
@@ -148,9 +160,11 @@ known previously. Future known-as-of reconstruction must exclude future input.
 
 ### Durable publication and recovery
 
-The intended durable acknowledgment is after the configured WAL synchronization
-boundary, not after enqueueing, copying to RAM, or an unsynchronized write.
-Distinguish pending/buffered admission from a durable receipt in all APIs.
+The current durable acknowledgment follows `File::sync_all`, not enqueueing,
+copying to RAM, or an unsynchronized write. Append I/O failure poisons the writer
+and explicitly reports an unknown commit outcome. The current exporter implements
+checked non-overwriting TSF publication; manifest activation and WAL retirement
+in the full lifecycle below remain unimplemented.
 
 The planned lifecycle is:
 

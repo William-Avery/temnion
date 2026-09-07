@@ -7,11 +7,14 @@ license.workspace = true
 repository.workspace = true
 description = "Reproducible foundation reference workloads for Temnion"
 publish = false
+default-run = "temnion-bench"
 
 [dependencies]
 temnion-core.workspace = true
 temnion-state.workspace = true
 temnion-events.workspace = true
+temnion-format.workspace = true
+temnion-storage.workspace = true
 
 [lints]
 workspace = true

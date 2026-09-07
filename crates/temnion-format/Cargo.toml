@@ -1,0 +1,15 @@
+[package]
+name = "temnion-format"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Strict bounded binary WAL and TSF codecs for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+crc32fast.workspace = true
+
+[lints]
+workspace = true

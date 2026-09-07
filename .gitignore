@@ -1,6 +1,7 @@
 # Rust outputs, including nested Tauri/Cargo targets.
 target/
 **/*.rs.bk
+/.worktrees/
 
 # Future desktop frontend dependencies and generated outputs.
 node_modules/

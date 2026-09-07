@@ -31,10 +31,13 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     let result = tem(&["describe"]);
     assert!(result.status.success());
     let text = String::from_utf8(result.stdout).unwrap();
-    for capability in ["durable", "server", "temql", "tnp", "tsf", "mcp", "studio"] {
+    for capability in ["server", "temql", "tnp", "mcp", "studio"] {
         assert!(text.contains(&format!("\"{capability}\": false")));
     }
-    assert!(text.contains("\"storage\": \"volatile-memory-only\""));
+    assert!(text.contains("\"durable\": true"));
+    assert!(text.contains("\"tsf\": true"));
+    assert!(text.contains("\"storage\": \"volatile-memory-and-os-synced-source-log\""));
+    assert!(text.contains("\"scalar-schemas\""));
 }
 
 #[test]
@@ -54,4 +57,130 @@ fn help_and_version_succeed() {
         assert!(result.status.success());
         assert!(!result.stdout.is_empty());
     }
+}
+
+struct DatabaseDirectory(std::path::PathBuf);
+
+impl DatabaseDirectory {
+    fn new() -> Self {
+        use std::sync::atomic::{AtomicU64, Ordering};
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let time = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "temnion-cli-test-{}-{time}-{}",
+            std::process::id(),
+            NEXT.fetch_add(1, Ordering::Relaxed),
+        ));
+        std::fs::create_dir(&path).unwrap();
+        Self(path)
+    }
+
+    fn command(&self, name: &str, args: &[&str]) -> std::process::Output {
+        Command::new(env!("CARGO_BIN_EXE_tem"))
+            .arg(name)
+            .arg(&self.0)
+            .args(args)
+            .output()
+            .unwrap()
+    }
+}
+
+impl Drop for DatabaseDirectory {
+    fn drop(&mut self) {
+        std::fs::remove_dir_all(&self.0).expect("remove the test-created database directory");
+    }
+}
+
+#[test]
+fn durable_cli_roundtrip_across_independent_processes() {
+    let directory = DatabaseDirectory::new();
+    let created = directory.command("init", &[]);
+    assert!(
+        created.status.success(),
+        "{}",
+        String::from_utf8_lossy(&created.stderr)
+    );
+    let appended = directory.command("append", &["0:1:0", "1", "1:5", "2:10", "2a00"]);
+    assert!(
+        appended.status.success(),
+        "{}",
+        String::from_utf8_lossy(&appended.stderr)
+    );
+    assert!(String::from_utf8_lossy(&appended.stdout).contains("Durable sequence=0"));
+    let history = directory.command("history", &[]);
+    assert!(history.status.success());
+    assert!(String::from_utf8_lossy(&history.stdout).contains("preview=2a00"));
+    let inspection = directory.command("inspect", &[]);
+    assert!(inspection.status.success());
+    assert!(String::from_utf8_lossy(&inspection.stdout).contains("records=1"));
+    let sealed = directory.command("seal", &[]);
+    assert!(
+        sealed.status.success(),
+        "{}",
+        String::from_utf8_lossy(&sealed.stderr)
+    );
+    assert!(String::from_utf8_lossy(&sealed.stdout).contains("segments_created=1"));
+    let segment = directory
+        .0
+        .join("segments")
+        .join(format!("{:020}-{:020}.tsf", 0, 0));
+    let verified = Command::new(env!("CARGO_BIN_EXE_tem"))
+        .arg("verify-segment")
+        .arg(segment)
+        .output()
+        .unwrap();
+    assert!(verified.status.success());
+    assert!(String::from_utf8_lossy(&verified.stdout).contains("Valid TSF: records=1"));
+}
+
+#[test]
+fn malformed_persistent_cli_inputs_do_not_admit_events() {
+    let directory = DatabaseDirectory::new();
+    assert!(directory.command("init", &[]).status.success());
+    for args in [
+        &["0:1", "1", "1:5", "2:10", "aa"][..],
+        &["0:1:0", "1", "1:5", "2:10", "not-hex"][..],
+        &["0:1:0", "1", "1:5", "2:10", "a"][..],
+        &["0:1:0", "1", "1:-1", "2:10", "aa"][..],
+    ] {
+        let output = directory.command("append", args);
+        assert!(!output.status.success(), "{args:?}");
+        assert!(output.stdout.is_empty());
+    }
+    assert!(!directory.command("history", &["0"]).status.success());
+    let inspection = directory.command("inspect", &[]);
+    assert!(String::from_utf8_lossy(&inspection.stdout).contains("records=0"));
+}
+
+#[test]
+fn recovery_is_explicit_and_does_not_hide_discarded_bytes() {
+    use std::io::Write;
+    let directory = DatabaseDirectory::new();
+    assert!(directory.command("init", &[]).status.success());
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:5", "2:10", "aa"])
+            .status
+            .success()
+    );
+    std::fs::OpenOptions::new()
+        .append(true)
+        .open(directory.0.join("events.wal"))
+        .unwrap()
+        .write_all(b"TNW")
+        .unwrap();
+    assert!(!directory.command("inspect", &[]).status.success());
+    let recovered = directory.command("recover", &[]);
+    assert!(
+        recovered.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recovered.stderr)
+    );
+    assert!(
+        String::from_utf8_lossy(&recovered.stdout).contains("discarded_incomplete_tail_bytes=3")
+    );
+    assert!(directory.command("inspect", &[]).status.success());
 }
