@@ -3,6 +3,16 @@
 **A standalone, Rust-first exact-state and history engine, built in explicit
 milestones.**
 
+> [!CAUTION]
+> **Temnion is publicly available experimental software. Use it at your own
+> risk.** It may lose, corrupt, or render data inaccurate; do not use it as the
+> only copy of important data. To the extent permitted by applicable law and
+> unless otherwise agreed in writing, you assume this risk: the software comes
+> without warranty, and its copyright holders and other parties who modify or
+> distribute it are not liable for resulting data loss, data corruption, or
+> related damages. Read the [full experimental software disclaimer](DISCLAIMER.md)
+> and the controlling terms in [`LICENSE`](LICENSE).
+
 ![Temnion overview showing live state, immutable history, querying, agent memory, interfaces, architecture, evolution, Studio, and operational defaults](docs/assets/temnion-overview.png)
 
 Temnion separates live state from append-only evidence. Its long-term architecture
@@ -151,6 +161,8 @@ acknowledgment boundaries, comparisons, and the remaining A–L program.
 - [Durable storage](docs/STORAGE.md), [binary formats](docs/BINARY_FORMAT.md),
   and [typed schemas](docs/SCHEMA.md).
 - [Dependency and license inventory](docs/DEPENDENCIES.md).
+- [Experimental software disclaimer](DISCLAIMER.md): data-loss risk, warranty,
+  liability, and applicable-law limits.
 - [Original architecture artifacts](docs/architecture/source/README.md):
   unchanged historical sources, not documentation of shipped interfaces.
 - [Security](SECURITY.md) and [contributing](CONTRIBUTING.md).
