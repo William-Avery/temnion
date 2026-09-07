@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased - Arrow Flight and Model Context Protocol (MCP) server (M20, M21)
+## Unreleased - SQL compatibility frontend lowering into canonical query IR (M22)
+
+- Added standard relational SQL compatibility frontend to `temnion-query` (M22):
+  - `parse_sql`: Parses standard relational and bi-temporal queries (`SELECT ... FROM ... WHERE ... [LIMIT n]`) directly lowering into canonical typed query IR (`LogicalPlan::Scan`).
+  - Supports compound bi-temporal constraints: `entity = '#shard:slot:gen'`, `valid_time >= t1 AND valid_time < t2`, `known_as_of = tk`, `known_time <= tk`.
+  - Supports relational value comparisons (`=`, `==`, `!=`, `<>`, `<=`, `>=`, `<`, `>`) lowered into strongly-typed `Expr::Binary` AST nodes.
+  - Verified canonical plan equivalence across SQL, TemQL, and Compact Tem shorthand syntax.
+- Integrated SQL query frontend across all interfaces:
+  - Added `QueryFormat::Sql = 3` to wire protocol framing in `temnion-protocol` and enabled `"sql"` capability negotiation.
+  - Added SQL query support in safe C ABI (`temnion_c_query_execute`).
+  - Added SQL query execution in Arrow Flight remote service `do_get` (`temnion-flight`).
+  - Added SQL query and EXPLAIN execution in Model Context Protocol tools (`temnion-mcp`).
+  - Updated CLI `tem query` and `tem explain` to support standard SQL syntax, updated `tem describe` to report `"sql": true`, and added `"sql"` to implemented capabilities list.
+- Published ADR 0011 documenting SQL compatibility frontend lowering into canonical query IR.
+
+## Arrow Flight and Model Context Protocol (MCP) server (M20, M21)
 
 - Added authenticated Arrow Flight remote analytical transport to `temnion-flight` (M20):
   - Flight message types (`FlightDescriptor`, `Ticket`, `FlightInfo`, `FlightEndpoint`, `FlightData`).

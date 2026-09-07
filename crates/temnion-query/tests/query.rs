@@ -12,7 +12,7 @@ use temnion_core::{
 use temnion_format::Limits;
 use temnion_query::{
     BinaryOp, CausalDirection, Expr, Literal, LogicalPlan, PhysicalPlan, QueryBudget, QueryError,
-    QueryExecutor, explain_query, parse_compact_tem, parse_temql, plan_query,
+    QueryExecutor, explain_query, parse_compact_tem, parse_sql, parse_temql, plan_query,
 };
 use temnion_storage::{Store, WriteEvent};
 
@@ -81,7 +81,7 @@ fn expression_evaluation_and_type_checks() {
 }
 
 #[test]
-fn temql_and_compact_tem_canonical_equivalence() {
+fn sql_temql_and_compact_tem_canonical_equivalence() {
     let temql_input = r#"
         FROM temnion
         ENTITY 0:1:0
@@ -94,8 +94,20 @@ fn temql_and_compact_tem_canonical_equivalence() {
 
     let compact_input = "tn:#0:1:0@v10..20@k20?health>50>position,health!32";
 
+    let sql_input = r#"
+        SELECT position, health
+        FROM temnion
+        WHERE entity = '#0:1:0'
+          AND valid_time >= 10
+          AND valid_time < 20
+          AND known_as_of = 20
+          AND health > 50
+        LIMIT 32
+    "#;
+
     let plan_from_temql = parse_temql(temql_input).unwrap();
     let plan_from_compact = parse_compact_tem(compact_input).unwrap();
+    let plan_from_sql = parse_sql(sql_input).unwrap();
 
     let expected = LogicalPlan::Scan {
         entity: Some(EntityId {
@@ -128,7 +140,9 @@ fn temql_and_compact_tem_canonical_equivalence() {
 
     assert_eq!(plan_from_temql, expected);
     assert_eq!(plan_from_compact, expected);
+    assert_eq!(plan_from_sql, expected);
     assert_eq!(plan_from_temql, plan_from_compact);
+    assert_eq!(plan_from_temql, plan_from_sql);
 }
 
 #[test]

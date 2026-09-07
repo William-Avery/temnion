@@ -23,8 +23,8 @@ use std::sync::{Arc, Mutex};
 use temnion_branch::BranchManager;
 use temnion_format::Limits;
 use temnion_query::{
-    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_temql,
-    plan_query,
+    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_sql,
+    parse_temql, plan_query,
 };
 use temnion_storage::{RecoveryMode, Store};
 
@@ -557,14 +557,15 @@ impl McpServer {
             .as_mut()
             .ok_or_else(|| "No database currently opened".to_string())?;
 
-        let logical = if query_str.trim().starts_with("tn:")
-            || query_str.trim().starts_with('#')
-            || query_str.trim().starts_with('$')
-        {
-            parse_compact_tem(query_str).map_err(|e| e.to_string())?
-        } else {
-            parse_temql(query_str).map_err(|e| e.to_string())?
-        };
+        let trimmed = query_str.trim();
+        let logical =
+            if trimmed.starts_with("tn:") || trimmed.starts_with('#') || trimmed.starts_with('$') {
+                parse_compact_tem(query_str).map_err(|e| e.to_string())?
+            } else if trimmed.to_ascii_lowercase().starts_with("select") {
+                parse_sql(query_str).map_err(|e| e.to_string())?
+            } else {
+                parse_temql(query_str).map_err(|e| e.to_string())?
+            };
 
         let physical = plan_query(&logical);
         let budget = EngineQueryBudget {
@@ -605,14 +606,15 @@ impl McpServer {
             .and_then(|q| q.as_str())
             .ok_or_else(|| "Missing required 'query' argument".to_string())?;
 
-        let logical = if query_str.trim().starts_with("tn:")
-            || query_str.trim().starts_with('#')
-            || query_str.trim().starts_with('$')
-        {
-            parse_compact_tem(query_str).map_err(|e| e.to_string())?
-        } else {
-            parse_temql(query_str).map_err(|e| e.to_string())?
-        };
+        let trimmed = query_str.trim();
+        let logical =
+            if trimmed.starts_with("tn:") || trimmed.starts_with('#') || trimmed.starts_with('$') {
+                parse_compact_tem(query_str).map_err(|e| e.to_string())?
+            } else if trimmed.to_ascii_lowercase().starts_with("select") {
+                parse_sql(query_str).map_err(|e| e.to_string())?
+            } else {
+                parse_temql(query_str).map_err(|e| e.to_string())?
+            };
 
         let explain = explain_query(&logical);
         Ok(format!("{explain}"))

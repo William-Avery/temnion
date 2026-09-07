@@ -125,7 +125,7 @@ adaptive techniques are rejected.
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
 | T11 — Daemon, full CLI, TNP, C/Arrow and IPC | Implemented for TNP wire protocol, local IPC, Arrow columnar layout, and C ABI (M18, M19); temniond daemon future | Checksummed binary packet framing (TNP), handshake negotiation, streaming query execution, duplex pipe/socket IPC transport (TnpChannel, TnpServer), Arrow-compatible columnar batching (ColumnarBatch), and safe handle-based C ABI (temnion-protocol). Standalone temniond daemon service remains future work. |
-| T12 — Optional remote/MCP/SQL | Implemented for Arrow Flight and MCP server (M20, M21); SQL compatibility future | Authenticated Arrow Flight remote analytical transport (`temnion-flight`) and standards-compliant Model Context Protocol server (`temnion-mcp`) with `tem mcp` CLI command. Optional DataFusion/SQL compatibility remains future work. |
+| T12 — Optional remote/MCP/SQL | Implemented for Arrow Flight, MCP server, and SQL compatibility (M20, M21, M22) | Authenticated Arrow Flight remote analytical transport (`temnion-flight`), Model Context Protocol server (`temnion-mcp`) with `tem mcp` CLI command, and SQL compatibility frontend (`parse_sql`) lowering directly to canonical Query IR across TNP, Flight, MCP, and CLI (`temnion-query`). |
 | T13 — Studio v1 and adoption docs | Future | Tauri 2 + Rust + React/TypeScript, TanStack where useful. Connections, schemas, TemQL editor, compact/prepared preview, history/bookmarks, EXPLAIN, progressive table/timeline/2D/3D views and ingestion wizard. Real backend flows plus install/API/interoperability and compact AI guides. |
 
 Exit: users can install, ingest, inspect, query, explain and visualize through
@@ -213,7 +213,7 @@ original files retain their historical names unchanged.
 | M19 | Native/C/Arrow/local IPC | T09/T11 | Full-duplex local IPC channel over pipes/sockets (`TnpChannel`, `TnpServer`), Arrow columnar batch layout (`ColumnarBatch`), and panic-safe handle-based C ABI (`temnion-protocol`) |
 | M20 | Arrow Flight | T12 | Authenticated Arrow Flight remote analytical transport (`FlightDescriptor`, `Ticket`, `FlightInfo`, streaming `FlightData`, `ColumnarBatch`) (`temnion-flight`) |
 | M21 | MCP server | T12 | Model Context Protocol JSON-RPC 2.0 control-plane server (query, explain, inspect, branch_list, causal_trace tools; resources; prompts; stdio transport) (`temnion-mcp`) |
-| M22 | SQL compatibility | T12 | Future |
+| M22 | SQL compatibility | T12 | Canonical query IR lowering for standard SELECT/WHERE/LIMIT queries; equivalent to TemQL and Compact Tem across TNP, Flight, MCP, and CLI (`temnion-query`) |
 | M23 | Studio v1 | T13 | Future |
 | M24 | Documentation v1 | T00–T21, especially T13 | Foundation docs; grows with implemented features |
 | M25 | Knowledge primitives | T14 | Future after Gate A |
