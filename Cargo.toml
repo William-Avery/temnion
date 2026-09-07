@@ -14,6 +14,7 @@ members = [
     "crates/temnion-index",
     "crates/temnion-runtime",
     "crates/temnion-query",
+    "crates/temnion-protocol",
     "crates/temnion-bench",
     "apps/temnion-cli",
 ]
@@ -39,6 +40,7 @@ temnion-branch = { path = "crates/temnion-branch" }
 temnion-index = { path = "crates/temnion-index" }
 temnion-runtime = { path = "crates/temnion-runtime" }
 temnion-query = { path = "crates/temnion-query" }
+temnion-protocol = { path = "crates/temnion-protocol" }
 crc32fast = "1.4"
 fs2 = "0.4.3"
 getrandom = "0.2"

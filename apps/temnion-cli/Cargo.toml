@@ -25,6 +25,7 @@ temnion-branch.workspace = true
 temnion-index.workspace = true
 temnion-runtime.workspace = true
 temnion-query.workspace = true
+temnion-protocol.workspace = true
 
 [lints]
 workspace = true

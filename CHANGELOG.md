@@ -1,6 +1,23 @@
 # Changelog
 
-## Unreleased - Typed Query IR, TemQL, and AI-compact Tem shorthand (M16, M17)
+## Unreleased - TNP wire protocol, local IPC, Arrow columnar layout, and C ABI (M18, M19)
+
+- Added canonical Temnion Network Protocol (TNP) framing, capability negotiation, and query streaming to `temnion-protocol` (M18):
+  - Binary packet framing (`TnpPacket`) with magic `b"TNPP"`, version 1, 16-byte fixed header, stream multiplexing identifiers, 16 MB maximum packet length, and trailing CRC32C checksum validation.
+  - Connection handshake payloads (`HandshakeRequest`, `HandshakeResponse`) with explicit protocol version verification and bitflag capability negotiation.
+  - Streaming query protocol emitting `QueryResponse` header metadata, streamed `StreamRecord` frames, and `StreamEnd` terminator.
+  - Connection liveness checks (`Ping`, `Pong`) and capability introspection (`DescribeRequest`, `DescribeResponse`).
+- Added full-duplex local IPC transport, Arrow columnar batch layout, and safe C ABI to `temnion-protocol` (M19):
+  - `TnpChannel<R, W>` transport adapter for duplex pipe and socket byte streams with partial read buffering.
+  - `TnpServer` dispatcher processing handshake, describe, ping, and query execution against durable database stores.
+  - `ColumnarBatch` memory layout compatible with Apache Arrow columnar formats, supporting lossless bidirectional conversions with `QueryRow` records.
+  - Panic-safe, handle-based foreign function interface (`temnion_c_store_open`, `temnion_c_store_close`, `temnion_c_query_execute`, `temnion_c_result_row_count`, `temnion_c_result_free`) protected by thread-safe `HandleRegistry` and `catch_unwind` boundaries.
+- Updated `apps/temnion-cli`:
+  - Added `temnion-protocol` dependency.
+  - Registered capabilities `tnp`, `local-ipc`, `arrow-columnar`, and `c-abi` in `tem describe` and updated `"tnp": true`.
+- Published ADR 0009 documenting TNP framing, negotiation, local IPC transport, Arrow columnar layout, and C ABI.
+
+## Typed Query IR, TemQL, and AI-compact Tem shorthand (M16, M17)
 
 - Added canonical typed query IR, physical planner, and reference executor to `temnion-query` (M16):
   - Unified `LogicalPlan` representing relational scans, entity histories, valid/known time ranges, causal DAG traces, and 2D/3D spatial Morton intervals.

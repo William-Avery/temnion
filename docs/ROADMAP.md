@@ -124,7 +124,7 @@ adaptive techniques are rejected.
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
-| T11 — Daemon, full CLI, TNP, C/Arrow and IPC | Future beyond demo CLI | `temniond`/`tem` use the same engine; capability/version/error contracts, timeouts, cancellation, batch/file ingest, resumable bounded subscriptions and local OS access control. C/Arrow ownership and portable pipes/sockets precede measured shared-memory optimization. |
+| T11 — Daemon, full CLI, TNP, C/Arrow and IPC | Implemented for TNP wire protocol, local IPC, Arrow columnar layout, and C ABI (M18, M19); temniond daemon future | Checksummed binary packet framing (TNP), handshake negotiation, streaming query execution, duplex pipe/socket IPC transport (TnpChannel, TnpServer), Arrow-compatible columnar batching (ColumnarBatch), and safe handle-based C ABI (temnion-protocol). Standalone temniond daemon service remains future work. |
 | T12 — Optional remote/MCP/SQL | Future | Authenticated TLS Arrow Flight, `temnion-mcp` with the official Rust SDK and optional DataFusion. Expose only implemented operations, bounded pages or authorized bulk handles, common authorization and budgets. |
 | T13 — Studio v1 and adoption docs | Future | Tauri 2 + Rust + React/TypeScript, TanStack where useful. Connections, schemas, TemQL editor, compact/prepared preview, history/bookmarks, EXPLAIN, progressive table/timeline/2D/3D views and ingestion wizard. Real backend flows plus install/API/interoperability and compact AI guides. |
 
@@ -209,8 +209,8 @@ original files retain their historical names unchanged.
 | M15 | Causal history | T05/T20 | CSR-packed causal graph, bidirectional traversal, and transitive cone tracing (`temnion-causal`) |
 | M16 | Typed Query IR | T01/T06 | Canonical LogicalPlan, Expr AST, physical planner, EXPLAIN, and reference executor with resource budgets (`temnion-query`) |
 | M17 | TemQL and compact Tem | T01/T06 | Human-readable TemQL grammar and token-efficient compact tn: shorthand with canonical IR lowering equivalence (`temnion-query`) |
-| M18 | Protocol/capabilities | T01/T06/T11 | CLI capability report only; protocol future |
-| M19 | Native/C/Arrow/local IPC | T09/T11 | Foundational Rust access only; full interfaces future |
+| M18 | Protocol/capabilities | T01/T06/T11 | Checksummed TNP binary packet framing, version handshake negotiation, capability self-description, streaming query execution, and continuation cursors (`temnion-protocol`) |
+| M19 | Native/C/Arrow/local IPC | T09/T11 | Full-duplex local IPC channel over pipes/sockets (`TnpChannel`, `TnpServer`), Arrow columnar batch layout (`ColumnarBatch`), and panic-safe handle-based C ABI (`temnion-protocol`) |
 | M20 | Arrow Flight | T12 | Future |
 | M21 | MCP server | T12 | Future |
 | M22 | SQL compatibility | T12 | Future |

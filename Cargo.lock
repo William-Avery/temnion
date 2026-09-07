@@ -87,6 +87,7 @@ dependencies = [
  "temnion-events",
  "temnion-format",
  "temnion-index",
+ "temnion-protocol",
  "temnion-query",
  "temnion-replay",
  "temnion-runtime",
@@ -130,6 +131,17 @@ dependencies = [
  "temnion-core",
  "temnion-events",
  "temnion-format",
+]
+
+[[package]]
+name = "temnion-protocol"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "temnion-core",
+ "temnion-format",
+ "temnion-query",
+ "temnion-storage",
 ]
 
 [[package]]

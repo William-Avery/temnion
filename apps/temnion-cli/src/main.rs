@@ -67,7 +67,7 @@ Usage: tem [help | version | describe | demo]
   explain         Parse a TemQL or compact tn: query and show the physical execution plan
 
 The append command is a low-level schema-ID/opaque-payload interface.
-Ordinary open never silently truncates history. temniond, TNP,
+Ordinary open never silently truncates history. temniond daemon,
 MCP, and Temnion Studio are not implemented yet.";
 
 const CAPABILITIES: &str = concat!(
@@ -86,11 +86,11 @@ const CAPABILITIES: &str = concat!(
     "\"branching-timelines\", \"causal-graph\", \"hierarchical-summaries\", ",
     "\"nd-layouts\", \"alternate-projections\", \"virtual-shards\", ",
     "\"background-dag\", \"storage-hierarchy\", \"query-ir\", \"temql\", ",
-    "\"compact-tem\"],\n",
+    "\"compact-tem\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
-    "  \"tnp\": false,\n",
+    "  \"tnp\": true,\n",
     "  \"tsf\": true,\n",
     "  \"mcp\": false,\n",
     "  \"studio\": false\n",
