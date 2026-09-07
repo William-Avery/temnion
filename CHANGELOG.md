@@ -1,6 +1,22 @@
 # Changelog
 
-## Unreleased - Virtual shards, background task DAG, and storage hierarchy (M8, M9, M10)
+## Unreleased - Typed Query IR, TemQL, and AI-compact Tem shorthand (M16, M17)
+
+- Added canonical typed query IR, physical planner, and reference executor to `temnion-query` (M16):
+  - Unified `LogicalPlan` representing relational scans, entity histories, valid/known time ranges, causal DAG traces, and 2D/3D spatial Morton intervals.
+  - Strongly-typed `Expr` AST with literals (`Int`, `Float`, `String`, `Bool`), field references, binary comparisons, boolean logic, and unary negation.
+  - `PhysicalPlan` optimizer applying predicate pushdown flags (`use_zone_maps`, `use_bloom`) for block skipping during storage scans.
+  - Human-readable `ExplainPlan` formatted operator tree output.
+  - Reference `QueryExecutor` evaluating physical plans against storage and CSR causal graphs while enforcing `QueryBudget` (max rows, max scanned events, max read bytes).
+- Added human-readable TemQL and AI-compact `tn:` shorthand parsers to `temnion-query` (M17):
+  - `parse_temql` supporting relational, temporal, field projection, limit, and causal queries (`EVENT <id> TRACE CAUSES/EFFECTS`).
+  - `parse_compact_tem` supporting AI-token efficient shorthand (`tn:#<entity>@v<start>..<end>@k<tick>?<filter>><proj>!<limit>`, `tn:$<event><-<depth>`, `tn:$<event>-><depth>`).
+  - Verified lowering equivalence guaranteeing identical `LogicalPlan` trees from both human and compact grammars.
+- Added `tem query <directory> <query-str>` and `tem explain <query-str>` commands to `apps/temnion-cli`.
+- Registered capabilities `query-ir`, `temql`, and `compact-tem` in `tem describe` and updated `"temql": true`.
+- Published ADR 0008 documenting Typed Query IR, TemQL, and AI-compact Tem shorthand.
+
+## Virtual shards, background task DAG, and storage hierarchy (M8, M9, M10)
 
 - Added single-writer virtual shards and deterministic merge coordinator to `temnion-runtime` (M8):
   - Strongly-typed `VirtualShardId` and routing policies (`ShardRoutingPolicy::Modular`, `ShardRoutingPolicy::Explicit`).

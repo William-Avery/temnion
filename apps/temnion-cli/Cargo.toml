@@ -24,6 +24,7 @@ temnion-causal.workspace = true
 temnion-branch.workspace = true
 temnion-index.workspace = true
 temnion-runtime.workspace = true
+temnion-query.workspace = true
 
 [lints]
 workspace = true

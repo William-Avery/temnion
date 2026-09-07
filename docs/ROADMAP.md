@@ -42,12 +42,16 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   Maintenance), cycle prevention, and adaptive foreground pressure throttling.
 - Storage hierarchy & tiers (`temnion-runtime`) organizing Hot DRAM, Warm Mapped, and Cold Media with
   LRU-bounded capacity eviction and auto-promotion.
+- Canonical typed query IR (`temnion-query`) with unified `LogicalPlan`, strongly-typed `Expr` AST,
+  resource budgets (`QueryBudget`), physical operator planner, and human-readable `EXPLAIN`.
+- Human-readable TemQL and token-efficient compact Tem (`tn:`) parsers (`temnion-query`), with
+  verified canonical lowering equivalence.
 - Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
-  causal-trace, and inspect-summary commands.
+  causal-trace, inspect-summary, query, and explain commands.
 
 This does **not** complete R0 or R1: most T01 specifications, most A–L workloads,
 full N-D schemas, and manifest-based lifecycle remain future work.
-It does not complete M18 protocol negotiation or full TemQL.
+It does not complete M18 protocol negotiation or remote listeners.
 No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
 See [README](../README.md) for the implemented package inventory.
 
@@ -96,7 +100,7 @@ all workloads and Studio feasibility are not claimed complete by the initial CLI
 | T03 — Typed state and events | Packed state, scalar schemas and mutation encoding | Generation-safe state and typed scalar/nullable/unit metadata with sparse atomic apply; N-D schemas, persistent schema registration and full input semantics remain unfinished. |
 | T04 — WAL, TSF and recovery | Durable source-log increment | OS-synchronized batches, bounded checksummed WAL/TSF v1, strict recovery and immutable export are implemented. WAL remains authoritative; manifest activation/retirement and its fault matrix remain unfinished. |
 | T05 — Replay, branches and causality | Replay, checkpoints, branching (M13), and causal DAG tracing (M15) implemented | Checkpoints, deterministic providers with captured inputs/RNG, temporal reconstruction, causal edges and structurally shared branch manifests. Replay equivalence between checkpoint resume and fresh playback is verified. Branch manifests with O(1) zero-duplication fork and CSR-packed causal DAG tracing are implemented. |
-| T06 — Canonical query and languages | Future | Typed logical/physical IR, reference executor, predicates/projections/aggregations, subscriptions, prepared queries, budgets/cancellation/cursors, capability discovery and EXPLAIN. TemQL/Tem parsers must be equivalent to native execution and errors. |
+| T06 — Canonical query and languages | Typed Query IR (M16), TemQL and compact Tem parsers (M17), physical planner, EXPLAIN, and reference executor implemented | Unified LogicalPlan, strongly-typed Expr tree, resource budgets (QueryBudget), physical planning with predicate pushdown (PhysicalPlan), human-readable EXPLAIN (ExplainPlan), reference QueryExecutor, human TemQL parser, and AI-compact tn: shorthand parser (temnion-query). Prepared query caching, subscription streaming, and protocol negotiation remain future work. |
 
 Exit: ingest -> durable receipt -> crash/restart -> historical query ->
 checkpoint/replay -> branch/causal trace, with explicit precision and limitations.
@@ -203,8 +207,8 @@ original files retain their historical names unchanged.
 | M13 | Branching timelines | T05 | Structurally shared timeline branching and persistent DAG manifests (`temnion-branch`) |
 | M14 | Multi-time semantics | T03/T06 | Typed clocks/filter subset; valid/known time preserved across branches and intervals |
 | M15 | Causal history | T05/T20 | CSR-packed causal graph, bidirectional traversal, and transitive cone tracing (`temnion-causal`) |
-| M16 | Typed Query IR | T01/T06 | Future; foundation contract decision only |
-| M17 | TemQL and compact Tem | T01/T06 | Future |
+| M16 | Typed Query IR | T01/T06 | Canonical LogicalPlan, Expr AST, physical planner, EXPLAIN, and reference executor with resource budgets (`temnion-query`) |
+| M17 | TemQL and compact Tem | T01/T06 | Human-readable TemQL grammar and token-efficient compact tn: shorthand with canonical IR lowering equivalence (`temnion-query`) |
 | M18 | Protocol/capabilities | T01/T06/T11 | CLI capability report only; protocol future |
 | M19 | Native/C/Arrow/local IPC | T09/T11 | Foundational Rust access only; full interfaces future |
 | M20 | Arrow Flight | T12 | Future |
