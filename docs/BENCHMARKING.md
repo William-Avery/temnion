@@ -2,10 +2,10 @@
 
 ## Current scope: baseline, not a database result
 
-`temnion-bench` is a small standard-library runner for the in-memory foundation.
-It does not write files, synchronize a WAL, recover after a crash, replay state,
-test transport latency, or establish Gates A/B/C. No source performance target
-has been verified by this document.
+The default `temnion-bench` binary is the in-memory baseline runner. It does not
+write files or synchronize a WAL. A separate, explicitly selected `durable`
+binary measures synchronized WAL batches and reopen recovery. Neither runner
+establishes Gates A/B/C or a production database performance result.
 
 From the repository root with the pinned Rust 1.85.0 toolchain:
 
@@ -58,7 +58,7 @@ Always label the measured acknowledgment boundary:
 | --- | --- | --- |
 | Volatile in-memory admission | Accepted into the process-owned log; process/object loss loses data | Implemented |
 | Buffered persistent I/O | Accepted/enqueued or written without the required stable-storage synchronization | Not implemented |
-| Durable acknowledgment | Configured WAL synchronization and recoverable metadata semantics completed before acknowledging | Not implemented |
+| Durable acknowledgment | WAL `File::sync_all` completed before acknowledging; reopen validates complete frames | Implemented by the durable source log |
 | End-to-end durable ingestion | Producer/queue/validation/write/sync/receipt latency and throughput, with all relevant boundaries included | Not implemented |
 
 The source's “buffered ingestion” target must not be read as a durable target.
@@ -66,6 +66,35 @@ Even future successful `write` calls are not sufficient to claim durable commits
 Report batch/group-commit size, synchronization policy, queue depth, filesystems,
 storage configuration and concurrency. Compare engines at equivalent recovery,
 ordering, consistency, exactness and acknowledgment semantics.
+
+### On-disk batch baseline
+
+The `durable` binary requires a new output directory and leaves its files for
+inspection. Its parent directory must already exist. It never overwrites an
+existing benchmark directory.
+
+```text
+cargo run --release -p temnion-bench --bin durable -- --directory local-databases\durable-run-1 --events 4096 --batch-size 256
+```
+
+It appends synthetic eight-byte values in source order, synchronizing once per
+batch, then reopens the store and verifies the recovered count/final value.
+It compares against a separately written file using the same headers, framing,
+payloads and per-batch synchronization. Streaming byte comparison verifies the
+two WAL files agree exactly.
+
+The framed-file comparison is a **lower bound**, not an equivalent database:
+it omits writer locking, full admission validation, recovery indexing and query
+APIs. Do not use this result to claim Gate A or superiority over SQLite/redb.
+Both cases include encoding/write/sync in the batch timing; setup/creation is
+outside it. Overall elapsed time includes input generation. Run order is fixed
+and cache/device scheduling can bias results.
+
+Output includes total bytes, total duration, sample count, and observed batch
+p50/p95 durations. Small sample counts have limited statistical meaning; these
+are batch latencies, not per-event latency percentiles. Recovery duration is a
+separate field. Defaults are 4,096 events and batches of 256; bounds are
+1..=1,000,000 events and 1..=4,096 events per batch.
 
 ## Reproducible measurement protocol
 
@@ -115,7 +144,7 @@ and synchronization settings.
 | Workload | Planned exercise | Current status |
 | --- | --- | --- |
 | A | Packed current state | Small seeded lookup foundation |
-| B | Event append, separately reported volatile/buffered/durable modes | Volatile append only |
+| B | Event append, separately reported volatile/buffered/durable modes | Volatile and explicit OS-synchronized batch baselines |
 | C | Spatial/N-dimensional local history | Future |
 | D | Entity history | Linear scan/pagination foundation |
 | E | Deterministic replay | Future |

@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased - Durable source-log increment
+
+- Added strict checksummed WAL/batch and raw TSF v1 binary codecs.
+- Added immutable scalar schemas, bit-exact values and canonical sparse mutation
+  encoding with atomic in-memory apply.
+- Added OS-locked source logs, synchronized durable receipts, restart-stable
+  identity/sequence, explicit tail recovery and bounded disk-backed history.
+- Added non-overwriting TSF exports that retain the authoritative WAL.
+- Extended `tem` with persistent initialization, append, inspection, history,
+  explicit recovery, sealing and standalone segment validation.
+- Added a separately selected synchronized batch/reference workload.
+
+Manifest-based WAL retirement, compression, reconstruction/checkpoints, branches
+and the remaining application interfaces are still unfinished. This increment
+does not complete the database or any production/performance gate.
+
 ## 0.1.0 - Foundation
 
 Initial Rust implementation of the Temnion architecture's first milestones.

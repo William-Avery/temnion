@@ -23,6 +23,31 @@ pub struct SourceEpoch(pub u64);
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct ClockId(pub u32);
 
+/// Persistent database namespace. The storage layer allocates this from OS entropy.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DatabaseId(pub [u8; 16]);
+
+impl fmt::Display for DatabaseId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        for byte in self.0 {
+            write!(f, "{byte:02x}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Versioned schema identity within a database; IDs are never repurposed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SchemaId(pub u32);
+
+/// Stable field identity within one schema.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FieldId(pub u16);
+
+/// Persistent timeline identity within one database.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct BranchId(pub u64);
+
 /// Generation-safe entity identity. Slot reuse never preserves the generation.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct EntityId {

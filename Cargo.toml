@@ -4,6 +4,9 @@ members = [
     "crates/temnion-core",
     "crates/temnion-state",
     "crates/temnion-events",
+    "crates/temnion-format",
+    "crates/temnion-schema",
+    "crates/temnion-storage",
     "crates/temnion-bench",
     "apps/temnion-cli",
 ]
@@ -19,6 +22,12 @@ repository = "https://github.com/William-Avery/temnion"
 temnion-core = { path = "crates/temnion-core" }
 temnion-state = { path = "crates/temnion-state" }
 temnion-events = { path = "crates/temnion-events" }
+temnion-format = { path = "crates/temnion-format" }
+temnion-schema = { path = "crates/temnion-schema" }
+temnion-storage = { path = "crates/temnion-storage" }
+crc32fast = "1.4"
+fs2 = "0.4.3"
+getrandom = "0.2"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

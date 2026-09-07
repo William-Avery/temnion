@@ -2,14 +2,18 @@
 
 ## Current foundation
 
-The 0.1 foundation exposes Rust library APIs and the `tem` demonstration CLI.
-There is no stable disk format, network protocol, C ABI, query language or
+The development workspace exposes Rust library APIs, a volatile demo and
+durable source-log CLI commands. WAL/batch and TSF v1 layouts are explicitly
+encoded and documented in [BINARY_FORMAT](BINARY_FORMAT.md); scalar schema/
+mutation encoding has its own v1 contract in [SCHEMA](SCHEMA.md). Unknown
+versions fail explicitly. There is no TNP protocol, C ABI, TemQL parser or
 production service. Rust memory layout is not an interchange encoding.
 
 - **MSRV:** Rust 1.85; reproducible baseline pinned to **1.85.0**.
 - **Workspace:** edition 2024, resolver 3, committed `Cargo.lock`.
-- **Default dependency boundary:** standard library and local workspace crates;
-  project source forbids unsafe code.
+- **Dependency boundary:** core/state/events/schema use std and local crates;
+  storage adds explicit checksum/locking/entropy dependencies. Project source
+  forbids unsafe code.
 - **CI configuration:** native Windows x64/MSVC and Linux x64/GNU formatting,
   Clippy and tests, with pinned and latest-stable Rust checks.
 - **ARM64:** `cargo check` for `aarch64-unknown-linux-gnu` compiles/type-checks code
@@ -19,7 +23,7 @@ production service. Rust memory layout is not an interchange encoding.
   Ubuntu 22.04. Native execution and eventual Tauri/WebKitGTK desktop qualification
   remain future work. Release binaries must match the supported userspace baseline.
 
-CI configuration is a validation plan, not a claim that remote jobs already ran.
+Each increment must have its actual hosted CI result associated with its commit.
 Latest stable is an additional compatibility signal, not an implicit MSRV bump.
 MSRV/edition/target changes require an explicit review and release note.
 
@@ -35,7 +39,7 @@ and malformed arguments must remain errors with nonzero exit status.
 
 ## Policy before new persistent or external contracts ship
 
-These are requirements for T01/T04–T06/T11+, not existing format guarantees:
+These remain requirements as T01/T04–T06/T11+ expand the current v1 formats:
 
 1. Independently version TSF, WAL, manifests/catalogs, TNP, query/schema IR, model
    manifests and the C ABI. Define readers/writers, required/optional features,

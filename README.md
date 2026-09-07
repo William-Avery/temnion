@@ -1,18 +1,19 @@
 # Temnion
 
-**A standalone, Rust-first exact-state and history engine, starting with a small
-in-memory foundation.**
+**A standalone, Rust-first exact-state and history engine, built in explicit
+milestones.**
 
 Temnion separates live state from append-only evidence. Its long-term architecture
 adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: M0 foundation + M1 packed state + M2 in-memory event history.**
-> This is not yet a durable database. All state and events disappear when their
-> owning process or objects are dropped. Successful append means volatile
-> admission, never a disk-synchronized commit. No performance target or native
-> Jetson qualification is claimed.
+> **Current status: packed state, typed scalar schemas, and durable source logs.**
+> `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
+> batches and acknowledges only after OS synchronization, with explicit recovery
+> and immutable TSF exports. This is not the completed database architecture or a
+> production-qualified release. No performance gate or native Jetson qualification
+> is claimed.
 
 ## What works now
 
@@ -21,16 +22,21 @@ first consumer, not a dependency of the database core.
 | `temnion-core` | Shard/entity identities, independent source/epoch/sequence event IDs, clock-domain timestamps, valid/observed/known time and clock-scoped ranges |
 | `temnion-state` | Generic dense `StateSlab<T>`, generation-safe slot reuse, bounded capacity, checked access and removal |
 | `temnion-events` | Per-source bounded `EventLog<T>`, typed payloads, atomic batch admission, entity/time/known-as-of filters and bounded snapshot pagination |
-| `temnion-cli` | `tem version`, `tem describe` (JSON capabilities), `tem demo`, help and nonzero errors |
-| `temnion-bench` | Seeded A/B/D baseline workloads against explicitly labeled `Vec`/`HashMap` reference paths |
+| `temnion-schema` | Validated scalar schemas, exact typed values, sparse mutations, atomic in-memory apply and bounded canonical binary encoding |
+| `temnion-format` | Versioned, bounded, checksummed WAL headers/batches and independently readable raw TSF v1 segments |
+| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, disk-backed bounded queries and non-overwriting TSF export |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal` and `verify-segment` commands |
+| `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
-History queries currently scan an in-memory source-local snapshot. There is no
-spatial/history index, persistent ID allocator, schema registry, distributed
-transaction, automatic state materializer, or historical replay engine.
+Disk history uses a source-local WAL batch-offset index and bounded frame
+decoding, not an entity/spatial index. Startup scans the authoritative WAL.
+Exports currently retain that WAL. Typed schemas are library APIs; the low-level
+CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**Not implemented:** WAL, TSF, recovery, checkpoints/replay, branches, causal
-graphs, typed query IR, TemQL/Tem parsers, `temniond`, TNP, IPC/C/Arrow/Flight, SQL,
-MCP, Studio, EKS, transformations, evolution, or a Tzeentch adapter.
+**Still unfinished:** manifest-based WAL retirement, compression, checkpoints/
+replay, branches, causal graph queries, typed query IR, TemQL/Tem parsers,
+`temniond`, TNP, IPC/C/Arrow/Flight, SQL, MCP, Studio, EKS, transformations,
+evolution, and Tzeentch integration.
 
 ## Quick start
 
@@ -52,11 +58,28 @@ excluded by a known-time cutoff, bounded history pages, and stale-handle
 rejection. Its current state follows **arrival order**; this is not a durable
 replay demonstration or a general temporal materialization policy.
 
+For a persistent source log:
+
+```text
+cargo run -p temnion-cli -- init local-databases\example
+cargo run -p temnion-cli -- append local-databases\example 0:1:0 1 1:5 2:10 2a00
+cargo run -p temnion-cli -- history local-databases\example
+cargo run -p temnion-cli -- inspect local-databases\example
+cargo run -p temnion-cli -- seal local-databases\example
+```
+
+Use your platform's path separators. The append arguments are entity identity,
+schema ID, valid clock/tick, known clock/tick, and hexadecimal payload.
+See [durable storage](docs/STORAGE.md) before using recovery or interpreting
+durability, query budgets and segment lifecycle.
+
 Runnable embedded examples:
 
 ```text
 cargo run -p temnion-state --example packed_state
 cargo run -p temnion-events --example history
+cargo run -p temnion-schema --example typed_mutation
+cargo run -p temnion-format --example binary_roundtrip
 cargo doc --workspace --no-deps
 ```
 
@@ -64,8 +87,9 @@ cargo doc --workspace --no-deps
 
 The workspace uses Rust edition 2024, resolver 3, and MSRV **1.85**.
 `rust-toolchain.toml` pins **1.85.0** with rustfmt and Clippy. Project source
-forbids unsafe code and the current Cargo dependency graph is std-only apart
-from local workspace crates.
+forbids unsafe code. The core/state/events/schema libraries remain std-only;
+the storage/format layers use explicit checksum, OS-locking and entropy
+dependencies listed in the [inventory](docs/DEPENDENCIES.md).
 
 | Target goal | Foundation validation policy |
 | --- | --- |
@@ -87,10 +111,10 @@ cargo test --workspace
 cargo run --release -p temnion-bench -- --entities 4096 --events 100000 --iterations 100000
 ```
 
-The benchmark is a volatile, in-process baseline, not evidence of durable
-database throughput. Aggregate `ns/op` is not a latency percentile. See
-[BENCHMARKING](docs/BENCHMARKING.md) for scope, lower-bound comparisons, and the
-full A–L measurement plan.
+The default benchmark is volatile. Its separate `--bin durable` workload measures
+OS-synchronized batches and reopen recovery against a framed-file lower bound.
+Neither establishes Gate A. See [BENCHMARKING](docs/BENCHMARKING.md) for commands,
+acknowledgment boundaries, comparisons, and the remaining A–L program.
 
 ## Documentation
 
@@ -100,6 +124,8 @@ full A–L measurement plan.
   state, volatile append/query semantics, and requirements before persistence.
 - [Compatibility](docs/COMPATIBILITY.md): Rust API, toolchains, future formats,
   protocols, upgrades, and release evidence.
+- [Durable storage](docs/STORAGE.md), [binary formats](docs/BINARY_FORMAT.md),
+  and [typed schemas](docs/SCHEMA.md).
 - [Dependency and license inventory](docs/DEPENDENCIES.md).
 - [Original architecture artifacts](docs/architecture/source/README.md):
   unchanged historical sources, not documentation of shipped interfaces.

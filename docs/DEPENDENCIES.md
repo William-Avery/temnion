@@ -2,10 +2,26 @@
 
 ## Public project code
 
-The foundation workspace contains `temnion-core`, `temnion-state`,
-`temnion-events`, `temnion-bench`, and `temnion-cli`. Its Cargo dependency graph
-currently contains only those local packages and the Rust standard library;
-there are no crates.io or Git package dependencies.
+The workspace contains `temnion-core`, `temnion-state`, `temnion-events`,
+`temnion-format`, `temnion-schema`, `temnion-storage`, `temnion-bench`, and
+`temnion-cli`. Core/state/events/schema remain std-only. Persistent formats and
+storage use the following locked crates.io dependencies.
+
+| Package | Resolved version | Purpose | Declared license |
+| --- | --- | --- | --- |
+| `crc32fast` | 1.5.1 | WAL/TSF corruption-detection checksums, not cryptographic authentication | MIT OR Apache-2.0 |
+| `fs2` | 0.4.3 | Cross-platform OS file locks for one writer | MIT/Apache-2.0 |
+| `getrandom` | 0.2.17 | OS entropy for persistent database and temporary-file identities | MIT OR Apache-2.0 |
+| `cfg-if` | 1.0.4 | Target-dependent dependency implementation | MIT OR Apache-2.0 |
+| `libc` | 0.2.189 | Unix system interfaces used by the dependencies | MIT OR Apache-2.0 |
+| `wasi` | 0.11.1+wasi-snapshot-preview1 | Target-specific entropy interface; not a qualified Temnion runtime target | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT |
+| `winapi` | 0.3.9 | Windows system interfaces used by the dependencies | MIT/Apache-2.0 |
+| `winapi-i686-pc-windows-gnu`, `winapi-x86_64-pc-windows-gnu` | 0.4.0 | Target-specific import support, not additional platform qualification | MIT/Apache-2.0 |
+
+Versions/licenses above come from the resolved Cargo metadata and lockfile.
+Low-level dependency implementations may use unsafe code; the workspace's
+`unsafe_code = "forbid"` applies to project-owned crates, not upstream internals.
+Keep upstream notices/licenses when distributing binaries or vendored sources.
 
 Project-owned public source is **AGPL-3.0-only**, copyright © 2026 William Lawrence
 Avery. A separate written commercial agreement may grant other rights;

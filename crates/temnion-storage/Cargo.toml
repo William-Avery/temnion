@@ -1,22 +1,18 @@
 [package]
-name = "temnion-cli"
+name = "temnion-storage"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 repository.workspace = true
-description = "The tem command-line interface for Temnion"
-
-[[bin]]
-name = "tem"
-path = "src/main.rs"
+description = "Checksummed durable source logs and immutable TSF exports for Temnion"
 
 [dependencies]
 temnion-core.workspace = true
-temnion-state.workspace = true
 temnion-events.workspace = true
 temnion-format.workspace = true
-temnion-storage.workspace = true
+fs2.workspace = true
+getrandom.workspace = true
 
 [lints]
 workspace = true
