@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased - initial Temnion Studio desktop slice (M23/M24 increment)
+
+- Replaced the static Studio mockup with a buildable React/TypeScript frontend.
+- Added TanStack Query for native command state and cache invalidation, and
+  TanStack Table for bounded query/history result rendering.
+- Added a Tauri 2 native host with typed, bounded commands for local database
+  create/open/disconnect, canonical TemQL/compact Tem/SQL query execution,
+  EXPLAIN, durable history, OS-synchronized append, branch inspection and causal
+  tracing.
+- Added a valid desktop entry point, Tauri build script/configuration, generated
+  application icons, npm/Cargo lockfiles and a Windows Studio CI job.
+- Added native parser and durable store/query round-trip tests.
+- Published `docs/STUDIO.md` with setup, operating boundaries, current limits
+  and an explicit list of work still required before full M23 completion.
+
 ## Unreleased - SQL compatibility frontend lowering into canonical query IR (M22)
 
 - Added standard relational SQL compatibility frontend to `temnion-query` (M22):

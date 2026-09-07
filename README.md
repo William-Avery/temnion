@@ -20,7 +20,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, and Model Context Protocol (MCP).**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), and an initial Temnion Studio desktop slice.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
 > and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
@@ -60,6 +60,7 @@ first consumer, not a dependency of the database core.
 | `temnion-flight` | Authenticated Arrow Flight remote analytical transport (`FlightDescriptor`, `Ticket`, `FlightInfo`, `FlightData` streaming columnar batches, `FlightService`) |
 | `temnion-mcp` | Model Context Protocol (MCP) JSON-RPC 2.0 control-plane server exposing query, explain, inspect, branch, causal tools, resources, and prompt templates |
 | `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, and `mcp` commands |
+| `temnion-studio` | Initial Tauri 2 + React/TypeScript desktop client using TanStack Query/Table for real bounded local open/create, query, EXPLAIN, history, append, branch inspection and causal-trace flows |
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
@@ -69,7 +70,7 @@ Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
 **Still unfinished:** manifest-based WAL retirement,
-standalone `temniond` daemon, Studio, EKS, transformations,
+standalone `temniond` daemon, full Studio v1 and native platform packaging, EKS, transformations,
 evolution, and Tzeentch integration.
 
 ## Quick start
@@ -77,7 +78,8 @@ evolution, and Tzeentch integration.
 Install [Rust through rustup](https://rustup.rs/) and the platform's native linker.
 Windows MSVC builds need Visual Studio C++ Build Tools; Linux builds need the
 usual C compiler/linker development packages. No Node, npm, GUI, model runtime,
-CUDA, or service is needed.
+CUDA, or service is needed for the headless engine and CLI. Studio has separate
+[desktop prerequisites and run instructions](docs/STUDIO.md).
 
 From the repository root:
 
@@ -160,6 +162,8 @@ acknowledgment boundaries, comparisons, and the remaining A–L program.
   protocols, upgrades, and release evidence.
 - [Durable storage](docs/STORAGE.md), [binary formats](docs/BINARY_FORMAT.md),
   and [typed schemas](docs/SCHEMA.md).
+- [Temnion Studio](docs/STUDIO.md): desktop prerequisites, real local flows,
+  enforced view limits, validation commands and remaining M23 gaps.
 - [Dependency and license inventory](docs/DEPENDENCIES.md).
 - [Experimental software disclaimer](DISCLAIMER.md): data-loss risk, warranty,
   liability, and applicable-law limits.

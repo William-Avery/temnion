@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, M5 lossless codecs, M6 N-D layouts, M7 alternate projections, M8 virtual shards, M9 background task DAG, M10 storage hierarchy, M11 filters and block skipping, M12 hierarchical summaries, M13 branching timelines, M14 multi-time semantics, and M15 causal DAG tracing.**
+**M0/M1 foundation through M22 interfaces are implemented in staged increments; M23 now has an initial functional Windows desktop slice and M24 documentation continues alongside delivery.**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -46,12 +46,18 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   resource budgets (`QueryBudget`), physical operator planner, and human-readable `EXPLAIN`.
 - Human-readable TemQL and token-efficient compact Tem (`tn:`) parsers (`temnion-query`), with
   verified canonical lowering equivalence.
+- TNP framing/capability negotiation, local IPC, Arrow-compatible columns, safe C
+  handles, authenticated Arrow Flight, bounded MCP tools and SQL compatibility
+  lowering through the canonical query IR (M18–M22).
+- Initial Temnion Studio desktop slice using Tauri 2, Rust, React/TypeScript,
+  TanStack Query and TanStack Table for real bounded local open/create, query,
+  EXPLAIN, history, append, branch inspection and causal tracing flows.
 - Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
   causal-trace, inspect-summary, query, and explain commands.
 
-This does **not** complete R0 or R1: most T01 specifications, most A–L workloads,
-full N-D schemas, and manifest-based lifecycle remain future work.
-It does not complete M18 protocol negotiation or remote listeners.
+This does **not** complete R0, R1 or R3: most T01 specifications, most A–L workloads,
+full N-D schemas, manifest-based lifecycle, `temniond`, complete Studio v1 flows,
+native installers and Linux/ARM64 desktop qualification remain future work.
 No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
 See [README](../README.md) for the implemented package inventory.
 
@@ -126,7 +132,7 @@ adaptive techniques are rejected.
 | --- | --- | --- |
 | T11 — Daemon, full CLI, TNP, C/Arrow and IPC | Implemented for TNP wire protocol, local IPC, Arrow columnar layout, and C ABI (M18, M19); temniond daemon future | Checksummed binary packet framing (TNP), handshake negotiation, streaming query execution, duplex pipe/socket IPC transport (TnpChannel, TnpServer), Arrow-compatible columnar batching (ColumnarBatch), and safe handle-based C ABI (temnion-protocol). Standalone temniond daemon service remains future work. |
 | T12 — Optional remote/MCP/SQL | Implemented for Arrow Flight, MCP server, and SQL compatibility (M20, M21, M22) | Authenticated Arrow Flight remote analytical transport (`temnion-flight`), Model Context Protocol server (`temnion-mcp`) with `tem mcp` CLI command, and SQL compatibility frontend (`parse_sql`) lowering directly to canonical Query IR across TNP, Flight, MCP, and CLI (`temnion-query`). |
-| T13 — Studio v1 and adoption docs | Future | Tauri 2 + Rust + React/TypeScript, TanStack where useful. Connections, schemas, TemQL editor, compact/prepared preview, history/bookmarks, EXPLAIN, progressive table/timeline/2D/3D views and ingestion wizard. Real backend flows plus install/API/interoperability and compact AI guides. |
+| T13 — Studio v1 and adoption docs | Initial Windows desktop slice | Tauri 2 + Rust + React/TypeScript with TanStack Query/Table now provides real bounded local open/create, query, EXPLAIN, history/timeline, append, branch inspection and causal tracing. Persistent schema workflows, prepared/continuation UI, branch mutation, richer 2D/3D views, installers and native Linux x64/ARM64 qualification remain future work. See [Studio guide](STUDIO.md). |
 
 Exit: users can install, ingest, inspect, query, explain and visualize through
 supported interfaces without reading implementation code. Headless builds stay
@@ -214,8 +220,8 @@ original files retain their historical names unchanged.
 | M20 | Arrow Flight | T12 | Authenticated Arrow Flight remote analytical transport (`FlightDescriptor`, `Ticket`, `FlightInfo`, streaming `FlightData`, `ColumnarBatch`) (`temnion-flight`) |
 | M21 | MCP server | T12 | Model Context Protocol JSON-RPC 2.0 control-plane server (query, explain, inspect, branch_list, causal_trace tools; resources; prompts; stdio transport) (`temnion-mcp`) |
 | M22 | SQL compatibility | T12 | Canonical query IR lowering for standard SELECT/WHERE/LIMIT queries; equivalent to TemQL and Compact Tem across TNP, Flight, MCP, and CLI (`temnion-query`) |
-| M23 | Studio v1 | T13 | Future |
-| M24 | Documentation v1 | T00–T21, especially T13 | Foundation docs; grows with implemented features |
+| M23 | Studio v1 | T13 | Initial buildable Windows slice with real bounded native database flows; full v1 and platform qualification remain future |
+| M24 | Documentation v1 | T00–T21, especially T13 | Foundation docs plus Studio setup/limits guide; grows with implemented features |
 | M25 | Knowledge primitives | T14 | Future after Gate A |
 | M26 | Provenance/truth maintenance | T14 | Future |
 | M27 | Predictive knowledge | T14 | Future |
@@ -251,7 +257,7 @@ not placeholder specifications that imply working interfaces.
 | Transport/FFI | Compatibility policy | TNP, C/Arrow ownership, IPC and negotiation specs/tests, T11 |
 | Models/MCP/SQL | Architecture's optional boundaries | Versioned worker manifests/protocol, capabilities/resources and access policy, T12/T14 |
 | Lifecycle | Architecture's exact/no-auto-delete defaults | Retention/reference/GC, backup/restore and migration specifications, T10/T21 |
-| Consumer and Studio | Architecture and milestone requirements | Adapter mappings/parity/replay limits; native desktop setup and real end-to-end flows, T09/T13/T20 |
+| Consumer and Studio | Architecture, milestone requirements and [Studio guide](STUDIO.md) | Adapter mappings/parity/replay limits; complete native packaging and platform-qualified end-to-end flows, T09/T13/T20 |
 | Measurement | [BENCHMARKING](BENCHMARKING.md) | Full A–L fixtures, predeclared Gates A/B/C and native platform reports |
 
 Every feature requires implementation, targeted tests, documentation and a
