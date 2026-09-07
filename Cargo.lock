@@ -85,8 +85,10 @@ dependencies = [
  "temnion-codec",
  "temnion-core",
  "temnion-events",
+ "temnion-flight",
  "temnion-format",
  "temnion-index",
+ "temnion-mcp",
  "temnion-protocol",
  "temnion-query",
  "temnion-replay",
@@ -116,6 +118,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "temnion-flight"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "temnion-core",
+ "temnion-format",
+ "temnion-protocol",
+ "temnion-query",
+ "temnion-storage",
+]
+
+[[package]]
 name = "temnion-format"
 version = "0.1.0"
 dependencies = [
@@ -131,6 +145,19 @@ dependencies = [
  "temnion-core",
  "temnion-events",
  "temnion-format",
+]
+
+[[package]]
+name = "temnion-mcp"
+version = "0.1.0"
+dependencies = [
+ "temnion-branch",
+ "temnion-causal",
+ "temnion-core",
+ "temnion-format",
+ "temnion-protocol",
+ "temnion-query",
+ "temnion-storage",
 ]
 
 [[package]]

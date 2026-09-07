@@ -14,6 +14,7 @@ use temnion_core::{
 };
 use temnion_events::{EventInput, EventLog, HistoryFilter, QueryBudget};
 use temnion_format::{Limits, StoredEvent, decode_segment};
+use temnion_mcp::McpServer;
 use temnion_query::{
     QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_temql,
     plan_query,
@@ -44,6 +45,7 @@ Usage: tem [help | version | describe | demo]
        tem causal-trace <directory> <sequence> [max-depth]
        tem query <directory> <query-str>
        tem explain <query-str>
+       tem mcp [directory]
 
   help       Show this help
   version    Show the version
@@ -65,10 +67,11 @@ Usage: tem [help | version | describe | demo]
   causal-trace    Trace transitive causal ancestry and effect cones for an event
   query           Execute a TemQL or compact tn: query against a database
   explain         Parse a TemQL or compact tn: query and show the physical execution plan
+  mcp             Run the Model Context Protocol (MCP) server over stdio
 
 The append command is a low-level schema-ID/opaque-payload interface.
-Ordinary open never silently truncates history. temniond daemon,
-MCP, and Temnion Studio are not implemented yet.";
+Ordinary open never silently truncates history. temniond daemon and
+Temnion Studio are not implemented yet.";
 
 const CAPABILITIES: &str = concat!(
     "{\n",
@@ -86,13 +89,14 @@ const CAPABILITIES: &str = concat!(
     "\"branching-timelines\", \"causal-graph\", \"hierarchical-summaries\", ",
     "\"nd-layouts\", \"alternate-projections\", \"virtual-shards\", ",
     "\"background-dag\", \"storage-hierarchy\", \"query-ir\", \"temql\", ",
-    "\"compact-tem\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\"],\n",
+    "\"compact-tem\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\", ",
+    "\"flight\", \"mcp\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
     "  \"tnp\": true,\n",
     "  \"tsf\": true,\n",
-    "  \"mcp\": false,\n",
+    "  \"mcp\": true,\n",
     "  \"studio\": false\n",
     "}"
 );
@@ -757,6 +761,19 @@ fn run() -> Result<(), Box<dyn Error>> {
                     field_pairs.join(", ")
                 )?;
             }
+        }
+        ("mcp", []) => {
+            let mut server = McpServer::new();
+            let stdin = io::stdin();
+            let stdout = io::stdout();
+            server.run_stdio(stdin.lock(), stdout.lock())?;
+        }
+        ("mcp", [path]) => {
+            let store = open_store(path)?;
+            let mut server = McpServer::with_store(store, text(path)?);
+            let stdin = io::stdin();
+            let stdout = io::stdout();
+            server.run_stdio(stdin.lock(), stdout.lock())?;
         }
         _ => {
             return Err(format!(

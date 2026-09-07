@@ -1,0 +1,20 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[package]
+name = "temnion-flight"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Arrow Flight remote bulk analytical protocol service for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-format.workspace = true
+temnion-storage.workspace = true
+temnion-query.workspace = true
+temnion-protocol.workspace = true
+crc32fast.workspace = true
+
+[lints]
+workspace = true
