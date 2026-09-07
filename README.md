@@ -8,12 +8,12 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, and durable source logs.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, and lossless codecs.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
-> and immutable TSF exports. This is not the completed database architecture or a
-> production-qualified release. No performance gate or native Jetson qualification
-> is claimed.
+> and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
+> deterministic reconstruction with bit-for-bit replay equivalence. `temnion-codec`
+> provides dynamically scored lossless compression primitives.
 
 ## What works now
 
@@ -25,7 +25,9 @@ first consumer, not a dependency of the database core.
 | `temnion-schema` | Validated scalar schemas, exact typed values, sparse mutations, atomic in-memory apply and bounded canonical binary encoding |
 | `temnion-format` | Versioned, bounded, checksummed WAL headers/batches and independently readable raw TSF v1 segments |
 | `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, disk-backed bounded queries and non-overwriting TSF export |
-| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal` and `verify-segment` commands |
+| `temnion-codec` | Strictly lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with CRC32C framing, dynamic scoring and raw fallback |
+| `temnion-replay` | Deterministic reconstruction, periodic atomic checkpoints (TNCP), SplitMix64 step-counted PRNG tracking and bit-for-bit replay equivalence |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `checkpoint`, `reconstruct`, and `evaluate-codecs` commands |
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
 Disk history uses a source-local WAL batch-offset index and bounded frame
@@ -33,10 +35,9 @@ decoding, not an entity/spatial index. Startup scans the authoritative WAL.
 Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**Still unfinished:** manifest-based WAL retirement, compression, checkpoints/
-replay, branches, causal graph queries, typed query IR, TemQL/Tem parsers,
-`temniond`, TNP, IPC/C/Arrow/Flight, SQL, MCP, Studio, EKS, transformations,
-evolution, and Tzeentch integration.
+**Still unfinished:** manifest-based WAL retirement, branches, causal graph queries,
+typed query IR, TemQL/Tem parsers, `temniond`, TNP, IPC/C/Arrow/Flight, SQL, MCP,
+Studio, EKS, transformations, evolution, and Tzeentch integration.
 
 ## Quick start
 

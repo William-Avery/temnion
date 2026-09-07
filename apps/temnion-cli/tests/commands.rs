@@ -184,3 +184,70 @@ fn recovery_is_explicit_and_does_not_hide_discarded_bytes() {
     );
     assert!(directory.command("inspect", &[]).status.success());
 }
+
+#[test]
+fn evaluate_codecs_command_runs_and_reports_lossless_ratios() {
+    let result = tem(&["evaluate-codecs"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let text = String::from_utf8(result.stdout).unwrap();
+    assert!(text.contains("Lossless Codec Evaluation:"));
+    assert!(text.contains("Pattern 1"));
+    assert!(text.contains("Pattern 2"));
+    assert!(text.contains("Pattern 3"));
+    assert!(text.contains("Pattern 4"));
+}
+
+#[test]
+fn checkpoint_and_reconstruct_cli_roundtrip() {
+    let directory = DatabaseDirectory::new();
+    assert!(directory.command("init", &[]).status.success());
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:100", "2:200", "deadbeef"])
+            .status
+            .success()
+    );
+    assert!(
+        directory
+            .command("append", &["0:2:0", "1", "1:101", "2:201", "cafebabe"])
+            .status
+            .success()
+    );
+
+    // Reconstruct at sequence 0
+    let recon0 = directory.command("reconstruct", &["0"]);
+    assert!(
+        recon0.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recon0.stderr)
+    );
+    let text0 = String::from_utf8(recon0.stdout).unwrap();
+    assert!(text0.contains("Reconstructed sequence=0 entities=1"));
+    assert!(text0.contains("entity=0:1:0 schema=1 payload_bytes=4"));
+
+    // Take checkpoint at latest sequence (1)
+    let cp = directory.command("checkpoint", &[]);
+    assert!(
+        cp.status.success(),
+        "{}",
+        String::from_utf8_lossy(&cp.stderr)
+    );
+    let cp_text = String::from_utf8(cp.stdout).unwrap();
+    assert!(cp_text.contains("Checkpoint sequence=1 entities=2"));
+
+    // Reconstruct at sequence 1 (should utilize checkpoint)
+    let recon1 = directory.command("reconstruct", &["1"]);
+    assert!(
+        recon1.status.success(),
+        "{}",
+        String::from_utf8_lossy(&recon1.stderr)
+    );
+    let text1 = String::from_utf8(recon1.stdout).unwrap();
+    assert!(text1.contains("Reconstructed sequence=1 entities=2"));
+    assert!(text1.contains("entity=0:1:0 schema=1 payload_bytes=4"));
+    assert!(text1.contains("entity=0:2:0 schema=1 payload_bytes=4"));
+}

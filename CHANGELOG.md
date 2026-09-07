@@ -1,20 +1,20 @@
 # Changelog
 
-## Unreleased - Durable source-log increment
+## Unreleased - Deterministic replay and lossless codecs increment (M3 & M5)
 
-- Added strict checksummed WAL/batch and raw TSF v1 binary codecs.
-- Added immutable scalar schemas, bit-exact values and canonical sparse mutation
-  encoding with atomic in-memory apply.
-- Added OS-locked source logs, synchronized durable receipts, restart-stable
-  identity/sequence, explicit tail recovery and bounded disk-backed history.
-- Added non-overwriting TSF exports that retain the authoritative WAL.
-- Extended `tem` with persistent initialization, append, inspection, history,
-  explicit recovery, sealing and standalone segment validation.
-- Added a separately selected synchronized batch/reference workload.
+- Added deterministic state reconstruction and replay engine (`temnion-replay`) with
+  periodic checksummed checkpoints (`TNCP`), SplitMix64 step-counted PRNG tracking,
+  and verified bit-for-bit replay equivalence between checkpointed resume and fresh playback.
+- Added lossless codec framework (`temnion-codec`) featuring `RawCodec`, `RleCodec`,
+  `BitPackCodec`, `DeltaForCodec`, and `XorCodec` (`TNCX`), with CRC32C framing,
+  strictly lossless verification, and dynamic cost scoring with raw fallback.
+- Added CLI commands `checkpoint`, `reconstruct`, and `evaluate-codecs` to `tem`, and
+  registered capabilities `deterministic-reconstruction` and `lossless-codecs`.
+- Published ADR 0003 documenting deterministic replay invariants and candidate codec scoring.
 
-Manifest-based WAL retirement, compression, reconstruction/checkpoints, branches
-and the remaining application interfaces are still unfinished. This increment
-does not complete the database or any production/performance gate.
+Manifest-based WAL retirement, branches, causal graph queries, and the remaining
+application interfaces are still unfinished. This increment does not complete the
+database or any production/performance gate.
 
 ## 0.1.0 - Foundation
 

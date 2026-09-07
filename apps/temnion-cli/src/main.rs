@@ -5,11 +5,15 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use temnion_codec::CodecScorer;
 use temnion_core::{
     ClockId, EntityId, EventTimes, SchemaId, ShardId, SourceEpoch, SourceId, Timestamp,
 };
 use temnion_events::{EventInput, EventLog, HistoryFilter, QueryBudget};
 use temnion_format::{Limits, StoredEvent, decode_segment};
+use temnion_replay::{
+    Checkpoint, RawEntityReducer, ReplayEngine, decode_raw_entity_map, encode_raw_entity_map,
+};
 use temnion_state::StateSlab;
 use temnion_storage::{RecoveryMode, StorageQueryBudget, Store, WriteEvent, read_bounded_file};
 
@@ -24,6 +28,9 @@ Usage: tem [help | version | describe | demo]
        tem recover <directory>
        tem seal <directory>
        tem verify-segment <segment-file>
+       tem checkpoint <directory>
+       tem reconstruct <directory> <sequence>
+       tem evaluate-codecs
 
   help       Show this help
   version    Show the version
@@ -36,6 +43,9 @@ Usage: tem [help | version | describe | demo]
   recover    Explicitly truncate an incomplete tail; never skip corrupt frames
   seal       Export immutable TSF segments while retaining the authoritative WAL
   verify-segment  Validate a standalone TSF segment
+  checkpoint      Take an atomic checksummed state checkpoint pinned to current WAL sequence
+  reconstruct     Deterministically replay WAL events to target sequence
+  evaluate-codecs Evaluate candidate lossless codecs on representative streams
 
 The append command is a low-level schema-ID/opaque-payload interface.
 Ordinary open never silently truncates history. temniond, TemQL, TNP,
@@ -52,7 +62,8 @@ const CAPABILITIES: &str = concat!(
     "  \"implemented\": [\"packed-state\", \"generational-entities\", ",
     "\"typed-events\", \"atomic-batch-admission\", \"entity-history\", ",
     "\"time-range-filter\", \"known-as-of\", \"bounded-snapshot-pagination\", ",
-    "\"scalar-schemas\", \"wal-recovery\", \"immutable-tsf-export\"],\n",
+    "\"scalar-schemas\", \"wal-recovery\", \"immutable-tsf-export\", ",
+    "\"deterministic-reconstruction\", \"lossless-codecs\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": false,\n",
@@ -216,6 +227,63 @@ fn show_record(out: &mut impl Write, event: &StoredEvent) -> io::Result<()> {
     writeln!(out, "{}", if event.payload.len() > 64 { "..." } else { "" })
 }
 
+fn to_u64_bytes(slice: &[u64]) -> Vec<u8> {
+    let mut bytes = Vec::with_capacity(slice.len() * 8);
+    for &x in slice {
+        bytes.extend_from_slice(&x.to_le_bytes());
+    }
+    bytes
+}
+
+fn evaluate_codecs_cmd(out: &mut impl Write) -> Result<(), Box<dyn Error>> {
+    let scorer = CodecScorer::default();
+
+    // 1. Monotonic sequence (e.g. timestamps or IDs)
+    let monotonic: Vec<u64> = (1000..1256).map(|x| x * 10).collect();
+    let r1 = scorer.select_best(&to_u64_bytes(&monotonic))?;
+
+    // 2. Clustered low-cardinality values (e.g. status flags / category IDs)
+    let mut clustered = Vec::with_capacity(256);
+    clustered.resize(64, 1u64);
+    clustered.resize(128, 2u64);
+    clustered.resize(192, 10u64);
+    clustered.resize(256, 5u64);
+    let r2 = scorer.select_best(&to_u64_bytes(&clustered))?;
+
+    // 3. Dense small integers (bit-packable in 4 bits: 0..15)
+    let small_ints: Vec<u64> = (0..256).map(|i| (i % 15) as u64).collect();
+    let r3 = scorer.select_best(&to_u64_bytes(&small_ints))?;
+
+    // 4. Repeated constant runs (RLE dominant)
+    let mut runs = Vec::with_capacity(256);
+    runs.resize(128, 42u64);
+    runs.resize(256, 99u64);
+    let r4 = scorer.select_best(&to_u64_bytes(&runs))?;
+
+    writeln!(out, "Lossless Codec Evaluation:")?;
+    writeln!(
+        out,
+        "  Pattern 1 (Monotonic timestamps, 256 u64): best={} raw={} compressed={} ratio={:.2}",
+        r1.name, r1.original_bytes, r1.compressed_bytes, r1.ratio
+    )?;
+    writeln!(
+        out,
+        "  Pattern 2 (Clustered statuses, 256 u64):   best={} raw={} compressed={} ratio={:.2}",
+        r2.name, r2.original_bytes, r2.compressed_bytes, r2.ratio
+    )?;
+    writeln!(
+        out,
+        "  Pattern 3 (Small ints 0..15, 256 u64):     best={} raw={} compressed={} ratio={:.2}",
+        r3.name, r3.original_bytes, r3.compressed_bytes, r3.ratio
+    )?;
+    writeln!(
+        out,
+        "  Pattern 4 (Long constant runs, 256 u64):   best={} raw={} compressed={} ratio={:.2}",
+        r4.name, r4.original_bytes, r4.compressed_bytes, r4.ratio
+    )?;
+    Ok(())
+}
+
 fn run() -> Result<(), Box<dyn Error>> {
     let args: Vec<OsString> = std::env::args_os().skip(1).collect();
     let command = args
@@ -341,6 +409,66 @@ fn run() -> Result<(), Box<dyn Error>> {
                 segment.header.source.0,
                 segment.header.epoch.0
             )?;
+        }
+        ("checkpoint", [path]) => {
+            let target_seq = {
+                let store = open_store(path)?;
+                if store.is_empty() {
+                    return Err("cannot create checkpoint on an empty database".into());
+                }
+                store.len() - 1
+            };
+            let mut engine = ReplayEngine::new(Path::new(path), 0)?;
+            let (state, header) = engine.reconstruct_at_sequence(
+                target_seq,
+                &mut RawEntityReducer,
+                decode_raw_entity_map,
+            )?;
+            let checkpoint = Checkpoint {
+                header,
+                state_payload: encode_raw_entity_map(&state),
+            };
+            let cp_path = engine.checkpoints().save(&checkpoint)?;
+            writeln!(
+                out,
+                "Checkpoint sequence={} entities={} path={}",
+                checkpoint.header.sequence,
+                state.len(),
+                cp_path.display()
+            )?;
+        }
+        ("reconstruct", [path, seq_val]) => {
+            let target_seq = text(seq_val)?.parse::<u64>()?;
+            let mut engine = ReplayEngine::new(Path::new(path), 0)?;
+            let (state, header) = engine.reconstruct_at_sequence(
+                target_seq,
+                &mut RawEntityReducer,
+                decode_raw_entity_map,
+            )?;
+            writeln!(
+                out,
+                "Reconstructed sequence={} entities={} valid_time={}:{} known_time={}:{}",
+                header.sequence,
+                state.len(),
+                header.valid_time.clock.0,
+                header.valid_time.ticks,
+                header.known_time.clock.0,
+                header.known_time.ticks,
+            )?;
+            for (entity, (schema, payload)) in &state {
+                writeln!(
+                    out,
+                    "  entity={}:{}:{} schema={} payload_bytes={}",
+                    entity.shard.0,
+                    entity.slot,
+                    entity.generation,
+                    schema.0,
+                    payload.len()
+                )?;
+            }
+        }
+        ("evaluate-codecs", []) => {
+            evaluate_codecs_cmd(&mut out)?;
         }
         _ => {
             return Err(format!(

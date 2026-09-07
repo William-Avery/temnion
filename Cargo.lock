@@ -59,11 +59,22 @@ dependencies = [
 name = "temnion-cli"
 version = "0.1.0"
 dependencies = [
+ "temnion-codec",
  "temnion-core",
  "temnion-events",
  "temnion-format",
+ "temnion-replay",
+ "temnion-schema",
  "temnion-state",
  "temnion-storage",
+]
+
+[[package]]
+name = "temnion-codec"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "temnion-core",
 ]
 
 [[package]]
@@ -83,6 +94,21 @@ version = "0.1.0"
 dependencies = [
  "crc32fast",
  "temnion-core",
+]
+
+[[package]]
+name = "temnion-replay"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "getrandom",
+ "temnion-codec",
+ "temnion-core",
+ "temnion-events",
+ "temnion-format",
+ "temnion-schema",
+ "temnion-state",
+ "temnion-storage",
 ]
 
 [[package]]

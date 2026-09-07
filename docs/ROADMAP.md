@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0/M1 foundation, typed scalar M2 payloads, and the durable M4 source-log increment.**
+**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, and M5 lossless codecs.**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -19,10 +19,14 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 - Immutable validated scalar schemas, sparse mutations and canonical encodings.
 - Checksummed WAL batches, OS-synchronized receipts, process-restart recovery,
   explicit incomplete-tail repair and standalone raw TSF v1 exports.
-- Durable CLI operations and a separate synchronized batch/reference benchmark.
+- Periodic checksummed checkpoints (`TNCP`), SplitMix64 step-counted PRNG tracking,
+  and verified bit-for-bit deterministic replay equivalence (`temnion-replay`).
+- Strictly lossless codec framework (`temnion-codec`) with Raw, RLE, BitPack, Delta-FOR,
+  and XOR compression, CRC32C framing, and dynamic candidate scoring.
+- Durable CLI operations, checkpoint/reconstruct/evaluate-codecs commands, and a separate synchronized batch/reference benchmark.
 
 This does **not** complete R0 or R1: most T01 specifications, most A–L workloads,
-full N-D schemas, manifest-based lifecycle, compression and replay remain future work.
+full N-D schemas, manifest-based lifecycle, branches and causal graphs remain future work.
 It does not complete M14 temporal reconstruction or M18 protocol negotiation.
 No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
 See [README](../README.md) for the implemented package inventory.
@@ -71,7 +75,7 @@ all workloads and Studio feasibility are not claimed complete by the initial CLI
 | --- | --- | --- |
 | T03 — Typed state and events | Packed state, scalar schemas and mutation encoding | Generation-safe state and typed scalar/nullable/unit metadata with sparse atomic apply; N-D schemas, persistent schema registration and full input semantics remain unfinished. |
 | T04 — WAL, TSF and recovery | Durable source-log increment | OS-synchronized batches, bounded checksummed WAL/TSF v1, strict recovery and immutable export are implemented. WAL remains authoritative; manifest activation/retirement and its fault matrix remain unfinished. |
-| T05 — Replay, branches and causality | Future | Checkpoints, deterministic providers with captured inputs/RNG, temporal reconstruction, causal edges and structurally shared branch manifests. Test exact supported replay, explicit nondeterminism boundaries, branch lifecycle and reader pins. |
+| T05 — Replay, branches and causality | Checkpoints, deterministic RNG and reconstruction foundation (M3) | Checkpoints, deterministic providers with captured inputs/RNG, temporal reconstruction, causal edges and structurally shared branch manifests. Replay equivalence between checkpoint resume and fresh playback is verified. Branches and causal edges remain future work. |
 | T06 — Canonical query and languages | Future | Typed logical/physical IR, reference executor, predicates/projections/aggregations, subscriptions, prepared queries, budgets/cancellation/cursors, capability discovery and EXPLAIN. TemQL/Tem parsers must be equivalent to native execution and errors. |
 
 Exit: ingest -> durable receipt -> crash/restart -> historical query ->
@@ -82,7 +86,7 @@ Cross-shard transactions are not silently inferred from source-local atomicity.
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
-| T07 — Efficient immutable representations | Future; candidates gated | Useful lossless codecs, grid/Morton candidates, entity/time/spatial projections, event bitmaps, bounds/membership filters, compressed predicates and hierarchical summaries. One logical payload; compare every optimized result to the reference and keep simpler winners. |
+| T07 — Efficient immutable representations | Lossless codecs implemented (M5); candidates gated | Useful lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring and raw fallback. Grid/Morton candidates, projections, bitmaps, and hierarchical summaries remain future work. |
 | T08 — Virtual-shard runtime and tiers | Future | Bounded queues, owned shard groups, local allocators, consistent cross-shard cuts, bounded fanout/merge and resumable background DAGs. Portable DRAM/page-cache/NVMe first; exercise skew, saturation, storage pressure and interrupted work. |
 | T09 — Embedded Tzeentch integration | Future | Separate feature-gated adapter and consumer change: fixtures/import, idempotency, bounded mirrored writes, drain/error reporting, historical-read parity and a rollback switch. Keep existing recorder/memory behavior authoritative until gates pass. |
 | T10 — Operations and enforcement | Future | Health/metrics, policy/authorization hooks, exact no-auto-delete retention, reference-aware GC, backup/restore, inspection/repair, schema/format migration and auditable operations. Validate recovery and foreground resource protection. |
