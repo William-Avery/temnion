@@ -1,6 +1,19 @@
 # Changelog
 
-## Unreleased - Hierarchical summaries and block skipping (M11, M12)
+## Unreleased - N-D chunking/layouts and alternate projections (M6, M7)
+
+- Added space-filling curve and N-dimensional chunking layouts to `temnion-index` (M6):
+  - 2D and 3D Morton (Z-order curve) bit-dilation encoding and decoding (`morton_encode_2d`, `morton_decode_2d`, `morton_encode_3d`, `morton_decode_3d`).
+  - Axis-aligned spatial bounding boxes (`BoundingBox2D`, `BoundingBox3D`) with `contains_point` and `intersects`.
+  - Uniform grid chunking (`GridChunker2D`, `GridChunker3D`) and bounding box Morton interval range decomposition (`morton_intervals_chunked`).
+- Added zero-payload-duplication alternate projections to `temnion-index` (M7):
+  - Inverted entity projection (`EntityProjection`), clock-scoped temporal projection (`TemporalProjection`), spatial Morton projection (`SpatialMortonProjection`), and schema/event-type bitmap projection (`SchemaBitmapProjection`).
+  - Composite multi-predicate index (`ProjectionIndex`) evaluating multi-axis query intersections (`query_intersect`) with early short-circuiting.
+  - Binary projection index serialization (`TNPR` magic, version 1, CRC32C framing).
+- Registered capabilities `nd-layouts` and `alternate-projections` in `tem describe`.
+- Published ADR 0006 documenting N-D chunking, Morton space-filling curves, and zero-duplication alternate projections.
+
+## Hierarchical summaries and block skipping (M11, M12)
 
 - Added hierarchical summary and indexing engine (`temnion-index`), featuring `ZoneMap<T>`,
   clock-scoped `TimestampZoneMap`, 512-bit `EntityBloomFilter` with 4 deterministic FNV-1a hash

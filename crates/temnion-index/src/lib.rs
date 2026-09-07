@@ -13,9 +13,11 @@
 //!   - Known-as-of cutoffs: eliminates scanning batches written after the cutoff.
 //! - Binary format: `TNSM` magic, version 1, CRC32C checksum.
 
+use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 
+use crc32fast::Hasher;
 use temnion_core::{
     ClockId, DatabaseId, EntityId, EventTimes, SchemaId, ShardId, SourceEpoch, SourceId, TimeAxis,
     TimeRange, Timestamp,
@@ -24,6 +26,9 @@ use temnion_events::HistoryFilter;
 
 pub const SUMMARY_MAGIC: [u8; 4] = *b"TNSM";
 pub const SUMMARY_VERSION: u16 = 1;
+
+pub const PROJECTION_MAGIC: [u8; 4] = *b"TNPR";
+pub const PROJECTION_VERSION: u16 = 1;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum IndexError {
@@ -39,9 +44,9 @@ impl fmt::Display for IndexError {
         match self {
             Self::Io(msg) => write!(f, "index I/O error: {msg}"),
             Self::Format(msg) => write!(f, "index format error: {msg}"),
-            Self::ChecksumMismatch => write!(f, "summary checksum mismatch"),
-            Self::InvalidMagic => write!(f, "invalid summary magic; expected TNSM"),
-            Self::UnsupportedVersion(v) => write!(f, "unsupported summary version: {v}"),
+            Self::ChecksumMismatch => write!(f, "index checksum mismatch"),
+            Self::InvalidMagic => write!(f, "invalid index magic; expected TNSM or TNPR"),
+            Self::UnsupportedVersion(v) => write!(f, "unsupported index version: {v}"),
         }
     }
 }
@@ -619,5 +624,682 @@ impl SegmentSummary {
 
         let _ = total_records;
         Self::new(database, source, epoch, blocks)
+    }
+}
+
+// ============================================================================
+// Space-Filling Curves & N-Dimensional Chunking (M6)
+// ============================================================================
+
+/// Dilates the bits of a 32-bit integer into even bit positions of a 64-bit integer.
+pub const fn morton_spread_2d(v: u32) -> u64 {
+    let mut x = v as u64;
+    x = (x | (x << 16)) & 0x0000_ffff_0000_ffff;
+    x = (x | (x << 8)) & 0x00ff_00ff_00ff_00ff;
+    x = (x | (x << 4)) & 0x0f0f_0f0f_0f0f_0f0f;
+    x = (x | (x << 2)) & 0x3333_3333_3333_3333;
+    x = (x | (x << 1)) & 0x5555_5555_5555_5555;
+    x
+}
+
+/// Compacts the even bits of a 64-bit integer back into a 32-bit integer.
+pub const fn morton_compact_2d(mut x: u64) -> u32 {
+    x &= 0x5555_5555_5555_5555;
+    x = (x | (x >> 1)) & 0x3333_3333_3333_3333;
+    x = (x | (x >> 2)) & 0x0f0f_0f0f_0f0f_0f0f;
+    x = (x | (x >> 4)) & 0x00ff_00ff_00ff_00ff;
+    x = (x | (x >> 8)) & 0x0000_ffff_0000_ffff;
+    x = (x | (x >> 16)) & 0x0000_0000_ffff_ffff;
+    x as u32
+}
+
+/// Encodes 2D coordinates `(x, y)` into a 64-bit Morton code (Z-order curve).
+pub const fn morton_encode_2d(x: u32, y: u32) -> u64 {
+    morton_spread_2d(x) | (morton_spread_2d(y) << 1)
+}
+
+/// Decodes a 64-bit Morton code into 2D coordinates `(x, y)`.
+pub const fn morton_decode_2d(code: u64) -> (u32, u32) {
+    (morton_compact_2d(code), morton_compact_2d(code >> 1))
+}
+
+/// Dilates the lower 21 bits of a 32-bit integer into every 3rd bit of a 64-bit integer.
+pub fn morton_spread_3d(v: u32) -> u64 {
+    let mut code = 0u64;
+    for i in 0..21 {
+        code |= (((v as u64) >> i) & 1) << (3 * i);
+    }
+    code
+}
+
+/// Compacts every 3rd bit of a 64-bit integer into the lower 21 bits of a 32-bit integer.
+pub fn morton_compact_3d(code: u64) -> u32 {
+    let mut v = 0u32;
+    for i in 0..21 {
+        v |= (((code >> (3 * i)) & 1) as u32) << i;
+    }
+    v
+}
+
+/// Encodes 3D coordinates `(x, y, z)` (each up to 21 bits) into a 64-bit Morton code.
+pub fn morton_encode_3d(x: u32, y: u32, z: u32) -> u64 {
+    morton_spread_3d(x) | (morton_spread_3d(y) << 1) | (morton_spread_3d(z) << 2)
+}
+
+/// Decodes a 64-bit Morton code into 3D coordinates `(x, y, z)`.
+pub fn morton_decode_3d(code: u64) -> (u32, u32, u32) {
+    (
+        morton_compact_3d(code),
+        morton_compact_3d(code >> 1),
+        morton_compact_3d(code >> 2),
+    )
+}
+
+/// 2D axis-aligned bounding box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BoundingBox2D {
+    pub min_x: u32,
+    pub min_y: u32,
+    pub max_x: u32,
+    pub max_y: u32,
+}
+
+impl BoundingBox2D {
+    pub const fn new(min_x: u32, min_y: u32, max_x: u32, max_y: u32) -> Self {
+        Self {
+            min_x,
+            min_y,
+            max_x,
+            max_y,
+        }
+    }
+
+    pub const fn contains_point(&self, x: u32, y: u32) -> bool {
+        x >= self.min_x && x <= self.max_x && y >= self.min_y && y <= self.max_y
+    }
+
+    pub const fn intersects(&self, other: &Self) -> bool {
+        self.min_x <= other.max_x
+            && self.max_x >= other.min_x
+            && self.min_y <= other.max_y
+            && self.max_y >= other.min_y
+    }
+
+    /// Decomposes the bounding box into a set of contiguous Morton code intervals in chunk space.
+    pub fn morton_intervals_chunked(&self, chunker: &GridChunker2D) -> Vec<(u64, u64)> {
+        let (min_cx, min_cy) = chunker.chunk_coords(self.min_x, self.min_y);
+        let (max_cx, max_cy) = chunker.chunk_coords(self.max_x, self.max_y);
+
+        let mut codes = Vec::new();
+        for cy in min_cy..=max_cy {
+            for cx in min_cx..=max_cx {
+                codes.push(morton_encode_2d(cx, cy));
+            }
+        }
+        codes.sort_unstable();
+        codes.dedup();
+
+        merge_consecutive_codes(&codes)
+    }
+}
+
+/// 3D axis-aligned bounding box.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct BoundingBox3D {
+    pub min_x: u32,
+    pub min_y: u32,
+    pub min_z: u32,
+    pub max_x: u32,
+    pub max_y: u32,
+    pub max_z: u32,
+}
+
+impl BoundingBox3D {
+    pub const fn new(
+        min_x: u32,
+        min_y: u32,
+        min_z: u32,
+        max_x: u32,
+        max_y: u32,
+        max_z: u32,
+    ) -> Self {
+        Self {
+            min_x,
+            min_y,
+            min_z,
+            max_x,
+            max_y,
+            max_z,
+        }
+    }
+
+    pub const fn contains_point(&self, x: u32, y: u32, z: u32) -> bool {
+        x >= self.min_x
+            && x <= self.max_x
+            && y >= self.min_y
+            && y <= self.max_y
+            && z >= self.min_z
+            && z <= self.max_z
+    }
+
+    pub const fn intersects(&self, other: &Self) -> bool {
+        self.min_x <= other.max_x
+            && self.max_x >= other.min_x
+            && self.min_y <= other.max_y
+            && self.max_y >= other.min_y
+            && self.min_z <= other.max_z
+            && self.max_z >= other.min_z
+    }
+
+    /// Decomposes the 3D bounding box into a set of contiguous Morton code intervals in chunk space.
+    pub fn morton_intervals_chunked(&self, chunker: &GridChunker3D) -> Vec<(u64, u64)> {
+        let (min_cx, min_cy, min_cz) = chunker.chunk_coords(self.min_x, self.min_y, self.min_z);
+        let (max_cx, max_cy, max_cz) = chunker.chunk_coords(self.max_x, self.max_y, self.max_z);
+
+        let mut codes = Vec::new();
+        for cz in min_cz..=max_cz {
+            for cy in min_cy..=max_cy {
+                for cx in min_cx..=max_cx {
+                    codes.push(morton_encode_3d(cx, cy, cz));
+                }
+            }
+        }
+        codes.sort_unstable();
+        codes.dedup();
+
+        merge_consecutive_codes(&codes)
+    }
+}
+
+/// Merges sorted unique codes into contiguous `(start, end)` inclusive intervals.
+fn merge_consecutive_codes(codes: &[u64]) -> Vec<(u64, u64)> {
+    let mut intervals = Vec::new();
+    if codes.is_empty() {
+        return intervals;
+    }
+
+    let mut start = codes[0];
+    let mut end = codes[0];
+
+    for &code in &codes[1..] {
+        if code == end + 1 {
+            end = code;
+        } else {
+            intervals.push((start, end));
+            start = code;
+            end = code;
+        }
+    }
+    intervals.push((start, end));
+    intervals
+}
+
+/// Uniform 2D spatial grid chunker dividing continuous coordinate space into discrete tiles.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GridChunker2D {
+    pub chunk_size: u32,
+}
+
+impl GridChunker2D {
+    pub fn new(chunk_size: u32) -> Result<Self, IndexError> {
+        if chunk_size == 0 {
+            return Err(IndexError::Format("chunk size must be positive"));
+        }
+        Ok(Self { chunk_size })
+    }
+
+    pub const fn chunk_coords(&self, x: u32, y: u32) -> (u32, u32) {
+        (x / self.chunk_size, y / self.chunk_size)
+    }
+
+    pub const fn chunk_morton(&self, x: u32, y: u32) -> u64 {
+        let (cx, cy) = self.chunk_coords(x, y);
+        morton_encode_2d(cx, cy)
+    }
+}
+
+/// Uniform 3D spatial grid chunker dividing continuous coordinate space into discrete voxels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct GridChunker3D {
+    pub chunk_size: u32,
+}
+
+impl GridChunker3D {
+    pub fn new(chunk_size: u32) -> Result<Self, IndexError> {
+        if chunk_size == 0 {
+            return Err(IndexError::Format("chunk size must be positive"));
+        }
+        Ok(Self { chunk_size })
+    }
+
+    pub const fn chunk_coords(&self, x: u32, y: u32, z: u32) -> (u32, u32, u32) {
+        (
+            x / self.chunk_size,
+            y / self.chunk_size,
+            z / self.chunk_size,
+        )
+    }
+
+    pub fn chunk_morton(&self, x: u32, y: u32, z: u32) -> u64 {
+        let (cx, cy, cz) = self.chunk_coords(x, y, z);
+        morton_encode_3d(cx, cy, cz)
+    }
+}
+
+// ============================================================================
+// Alternate Projections (M7)
+// ============================================================================
+
+/// Inverted entity projection mapping EntityId to sorted sequence numbers without payload duplication.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct EntityProjection {
+    pub entries: BTreeMap<EntityId, Vec<u64>>,
+}
+
+impl EntityProjection {
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, entity: EntityId, sequence: u64) {
+        let list = self.entries.entry(entity).or_default();
+        if list.last().copied() != Some(sequence) {
+            list.push(sequence);
+        }
+    }
+
+    pub fn sequences_for_entity(&self, entity: EntityId) -> &[u64] {
+        self.entries
+            .get(&entity)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+/// Temporal projection mapping (ClockId, tick) to sorted sequence numbers.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TemporalProjection {
+    pub entries: BTreeMap<(ClockId, u64), Vec<u64>>,
+}
+
+impl TemporalProjection {
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, clock: ClockId, ticks: u64, sequence: u64) {
+        let list = self.entries.entry((clock, ticks)).or_default();
+        if list.last().copied() != Some(sequence) {
+            list.push(sequence);
+        }
+    }
+
+    pub fn sequences_in_range(&self, clock: ClockId, min_ticks: u64, max_ticks: u64) -> Vec<u64> {
+        let mut results = Vec::new();
+        for ((c, _ticks), seqs) in self.entries.range((clock, min_ticks)..=(clock, max_ticks)) {
+            if *c == clock {
+                results.extend_from_slice(seqs);
+            }
+        }
+        results.sort_unstable();
+        results.dedup();
+        results
+    }
+}
+
+/// Spatial Morton projection mapping Morton code to sorted sequence numbers.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SpatialMortonProjection {
+    pub entries: BTreeMap<u64, Vec<u64>>,
+}
+
+impl SpatialMortonProjection {
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, morton_code: u64, sequence: u64) {
+        let list = self.entries.entry(morton_code).or_default();
+        if list.last().copied() != Some(sequence) {
+            list.push(sequence);
+        }
+    }
+
+    pub fn sequences_in_intervals(&self, intervals: &[(u64, u64)]) -> Vec<u64> {
+        let mut results = Vec::new();
+        for &(start, end) in intervals {
+            for (_, seqs) in self.entries.range(start..=end) {
+                results.extend_from_slice(seqs);
+            }
+        }
+        results.sort_unstable();
+        results.dedup();
+        results
+    }
+
+    pub fn sequences_in_box(&self, bbox: &BoundingBox2D, chunker: &GridChunker2D) -> Vec<u64> {
+        let intervals = bbox.morton_intervals_chunked(chunker);
+        self.sequences_in_intervals(&intervals)
+    }
+}
+
+/// Schema/event-type bitmap projection mapping SchemaId to sorted sequence numbers.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct SchemaBitmapProjection {
+    pub entries: BTreeMap<SchemaId, Vec<u64>>,
+}
+
+impl SchemaBitmapProjection {
+    pub fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    pub fn insert(&mut self, schema: SchemaId, sequence: u64) {
+        let list = self.entries.entry(schema).or_default();
+        if list.last().copied() != Some(sequence) {
+            list.push(sequence);
+        }
+    }
+
+    pub fn sequences_for_schema(&self, schema: SchemaId) -> &[u64] {
+        self.entries
+            .get(&schema)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+}
+
+/// Helper function to intersect two sorted slices of sequence numbers.
+fn intersect_sorted(a: &[u64], b: &[u64]) -> Vec<u64> {
+    let mut out = Vec::new();
+    let mut i = 0;
+    let mut j = 0;
+    while i < a.len() && j < b.len() {
+        match a[i].cmp(&b[j]) {
+            std::cmp::Ordering::Less => i += 1,
+            std::cmp::Ordering::Greater => j += 1,
+            std::cmp::Ordering::Equal => {
+                out.push(a[i]);
+                i += 1;
+                j += 1;
+            }
+        }
+    }
+    out
+}
+
+/// Composite projection index aggregating entity, temporal, spatial, and schema projections.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ProjectionIndex {
+    pub entities: EntityProjection,
+    pub temporal: TemporalProjection,
+    pub spatial: SpatialMortonProjection,
+    pub schemas: SchemaBitmapProjection,
+    pub total_indexed: u64,
+}
+
+impl ProjectionIndex {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn index_event(
+        &mut self,
+        sequence: u64,
+        entity: EntityId,
+        schema: SchemaId,
+        valid_time: Timestamp,
+        spatial_coords: Option<(u32, u32)>,
+        chunker: Option<&GridChunker2D>,
+    ) {
+        self.entities.insert(entity, sequence);
+        self.schemas.insert(schema, sequence);
+        self.temporal
+            .insert(valid_time.clock, valid_time.ticks, sequence);
+
+        if let (Some((x, y)), Some(c)) = (spatial_coords, chunker) {
+            let code = c.chunk_morton(x, y);
+            self.spatial.insert(code, sequence);
+        }
+        self.total_indexed += 1;
+    }
+
+    /// Evaluates a multi-predicate intersection across projections, returning matching sequences.
+    pub fn query_intersect(
+        &self,
+        entity: Option<EntityId>,
+        schema: Option<SchemaId>,
+        time_range: Option<(ClockId, u64, u64)>,
+        spatial_intervals: Option<&[(u64, u64)]>,
+    ) -> Vec<u64> {
+        let mut candidates: Option<Vec<u64>> = None;
+
+        if let Some(e) = entity {
+            candidates = Some(self.entities.sequences_for_entity(e).to_vec());
+            if candidates.as_ref().unwrap().is_empty() {
+                return Vec::new();
+            }
+        }
+
+        if let Some(s) = schema {
+            let seqs = self.schemas.sequences_for_schema(s);
+            match &mut candidates {
+                None => candidates = Some(seqs.to_vec()),
+                Some(existing) => {
+                    *existing = intersect_sorted(existing, seqs);
+                }
+            }
+            if candidates.as_ref().unwrap().is_empty() {
+                return Vec::new();
+            }
+        }
+
+        if let Some((clock, min_t, max_t)) = time_range {
+            let seqs = self.temporal.sequences_in_range(clock, min_t, max_t);
+            match &mut candidates {
+                None => candidates = Some(seqs),
+                Some(existing) => {
+                    *existing = intersect_sorted(existing, &seqs);
+                }
+            }
+            if candidates.as_ref().unwrap().is_empty() {
+                return Vec::new();
+            }
+        }
+
+        if let Some(intervals) = spatial_intervals {
+            let seqs = self.spatial.sequences_in_intervals(intervals);
+            match &mut candidates {
+                None => candidates = Some(seqs),
+                Some(existing) => {
+                    *existing = intersect_sorted(existing, &seqs);
+                }
+            }
+        }
+
+        candidates.unwrap_or_default()
+    }
+
+    /// Serializes the projection index into a binary byte vector (`TNPR` format).
+    pub fn encode(&self) -> Vec<u8> {
+        let mut body = Vec::new();
+
+        // total_indexed
+        body.extend_from_slice(&self.total_indexed.to_le_bytes());
+
+        // Entities
+        body.extend_from_slice(&(self.entities.entries.len() as u32).to_le_bytes());
+        for (entity, seqs) in &self.entities.entries {
+            body.extend_from_slice(&entity.shard.0.to_le_bytes());
+            body.extend_from_slice(&entity.slot.to_le_bytes());
+            body.extend_from_slice(&entity.generation.to_le_bytes());
+            body.extend_from_slice(&(seqs.len() as u32).to_le_bytes());
+            for &seq in seqs {
+                body.extend_from_slice(&seq.to_le_bytes());
+            }
+        }
+
+        // Temporal
+        body.extend_from_slice(&(self.temporal.entries.len() as u32).to_le_bytes());
+        for ((clock, ticks), seqs) in &self.temporal.entries {
+            body.extend_from_slice(&clock.0.to_le_bytes());
+            body.extend_from_slice(&ticks.to_le_bytes());
+            body.extend_from_slice(&(seqs.len() as u32).to_le_bytes());
+            for &seq in seqs {
+                body.extend_from_slice(&seq.to_le_bytes());
+            }
+        }
+
+        // Spatial
+        body.extend_from_slice(&(self.spatial.entries.len() as u32).to_le_bytes());
+        for (&code, seqs) in &self.spatial.entries {
+            body.extend_from_slice(&code.to_le_bytes());
+            body.extend_from_slice(&(seqs.len() as u32).to_le_bytes());
+            for &seq in seqs {
+                body.extend_from_slice(&seq.to_le_bytes());
+            }
+        }
+
+        // Schemas
+        body.extend_from_slice(&(self.schemas.entries.len() as u32).to_le_bytes());
+        for (&schema, seqs) in &self.schemas.entries {
+            body.extend_from_slice(&schema.0.to_le_bytes());
+            body.extend_from_slice(&(seqs.len() as u32).to_le_bytes());
+            for &seq in seqs {
+                body.extend_from_slice(&seq.to_le_bytes());
+            }
+        }
+
+        let mut hasher = Hasher::new();
+        hasher.update(&body);
+        let checksum = hasher.finalize();
+
+        let mut output = Vec::with_capacity(12 + body.len());
+        output.extend_from_slice(&PROJECTION_MAGIC);
+        output.extend_from_slice(&PROJECTION_VERSION.to_le_bytes());
+        output.extend_from_slice(&0u16.to_le_bytes()); // flags
+        output.extend_from_slice(&checksum.to_le_bytes());
+        output.extend_from_slice(&body);
+        output
+    }
+
+    /// Deserializes a projection index from binary bytes with CRC32C integrity validation.
+    pub fn decode(bytes: &[u8]) -> Result<Self, IndexError> {
+        if bytes.len() < 12 {
+            return Err(IndexError::Format("projection index truncated"));
+        }
+        if bytes[0..4] != PROJECTION_MAGIC {
+            return Err(IndexError::InvalidMagic);
+        }
+        let version = u16::from_le_bytes(bytes[4..6].try_into().unwrap());
+        if version != PROJECTION_VERSION {
+            return Err(IndexError::UnsupportedVersion(version));
+        }
+        let expected_checksum = u32::from_le_bytes(bytes[8..12].try_into().unwrap());
+        let body = &bytes[12..];
+
+        let mut hasher = Hasher::new();
+        hasher.update(body);
+        if hasher.finalize() != expected_checksum {
+            return Err(IndexError::ChecksumMismatch);
+        }
+
+        let mut offset = 0;
+        let read_u32 = |offset: &mut usize| -> Result<u32, IndexError> {
+            if *offset + 4 > body.len() {
+                return Err(IndexError::Format("unexpected EOF reading u32"));
+            }
+            let v = u32::from_le_bytes(body[*offset..*offset + 4].try_into().unwrap());
+            *offset += 4;
+            Ok(v)
+        };
+        let read_u64 = |offset: &mut usize| -> Result<u64, IndexError> {
+            if *offset + 8 > body.len() {
+                return Err(IndexError::Format("unexpected EOF reading u64"));
+            }
+            let v = u64::from_le_bytes(body[*offset..*offset + 8].try_into().unwrap());
+            *offset += 8;
+            Ok(v)
+        };
+
+        let total_indexed = read_u64(&mut offset)?;
+
+        // Entities
+        let entity_count = read_u32(&mut offset)? as usize;
+        let mut entities = EntityProjection::new();
+        for _ in 0..entity_count {
+            let shard = ShardId(read_u32(&mut offset)?);
+            let slot = read_u32(&mut offset)?;
+            let generation = read_u32(&mut offset)?;
+            let seq_count = read_u32(&mut offset)? as usize;
+            let mut seqs = Vec::with_capacity(seq_count);
+            for _ in 0..seq_count {
+                seqs.push(read_u64(&mut offset)?);
+            }
+            entities.entries.insert(
+                EntityId {
+                    shard,
+                    slot,
+                    generation,
+                },
+                seqs,
+            );
+        }
+
+        // Temporal
+        let temp_count = read_u32(&mut offset)? as usize;
+        let mut temporal = TemporalProjection::new();
+        for _ in 0..temp_count {
+            let clock = ClockId(read_u32(&mut offset)?);
+            let ticks = read_u64(&mut offset)?;
+            let seq_count = read_u32(&mut offset)? as usize;
+            let mut seqs = Vec::with_capacity(seq_count);
+            for _ in 0..seq_count {
+                seqs.push(read_u64(&mut offset)?);
+            }
+            temporal.entries.insert((clock, ticks), seqs);
+        }
+
+        // Spatial
+        let spat_count = read_u32(&mut offset)? as usize;
+        let mut spatial = SpatialMortonProjection::new();
+        for _ in 0..spat_count {
+            let code = read_u64(&mut offset)?;
+            let seq_count = read_u32(&mut offset)? as usize;
+            let mut seqs = Vec::with_capacity(seq_count);
+            for _ in 0..seq_count {
+                seqs.push(read_u64(&mut offset)?);
+            }
+            spatial.entries.insert(code, seqs);
+        }
+
+        // Schemas
+        let schema_count = read_u32(&mut offset)? as usize;
+        let mut schemas = SchemaBitmapProjection::new();
+        for _ in 0..schema_count {
+            let schema = SchemaId(read_u32(&mut offset)?);
+            let seq_count = read_u32(&mut offset)? as usize;
+            let mut seqs = Vec::with_capacity(seq_count);
+            for _ in 0..seq_count {
+                seqs.push(read_u64(&mut offset)?);
+            }
+            schemas.entries.insert(schema, seqs);
+        }
+
+        Ok(Self {
+            entities,
+            temporal,
+            spatial,
+            schemas,
+            total_indexed,
+        })
     }
 }

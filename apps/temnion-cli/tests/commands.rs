@@ -39,6 +39,8 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"storage\": \"volatile-memory-and-os-synced-source-log\""));
     assert!(text.contains("\"scalar-schemas\""));
     assert!(text.contains("\"hierarchical-summaries\""));
+    assert!(text.contains("\"nd-layouts\""));
+    assert!(text.contains("\"alternate-projections\""));
 }
 
 #[test]
