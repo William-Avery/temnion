@@ -20,6 +20,7 @@ use temnion_format::{
     decode_segment, decode_wal_header, encode_batch, encode_segment, encode_wal_header,
     frame_length,
 };
+use temnion_index::{BlockSummary, IndexError, SegmentSummary, SkipDecision};
 
 #[derive(Debug)]
 pub enum StorageError {
@@ -28,6 +29,7 @@ pub enum StorageError {
         source: io::Error,
     },
     Format(FormatError),
+    Index(IndexError),
     Entropy(String),
     AllocationFailed,
     AlreadyExists,
@@ -64,6 +66,7 @@ impl fmt::Display for StorageError {
         match self {
             Self::Io { operation, source } => write!(f, "{operation}: {source}"),
             Self::Format(error) => write!(f, "invalid persistent data: {error}"),
+            Self::Index(error) => write!(f, "index error: {error}"),
             Self::Entropy(error) => write!(f, "OS entropy unavailable: {error}"),
             Self::AllocationFailed => write!(f, "could not reserve bounded storage metadata"),
             Self::AlreadyExists => write!(f, "database already exists"),
@@ -111,6 +114,7 @@ impl Error for StorageError {
         match self {
             Self::Io { source, .. } => Some(source),
             Self::Format(error) => Some(error),
+            Self::Index(error) => Some(error),
             Self::CommitOutcomeUnknown(error) => Some(error.as_ref()),
             _ => None,
         }
@@ -120,6 +124,12 @@ impl Error for StorageError {
 impl From<FormatError> for StorageError {
     fn from(error: FormatError) -> Self {
         Self::Format(error)
+    }
+}
+
+impl From<IndexError> for StorageError {
+    fn from(error: IndexError) -> Self {
+        Self::Index(error)
     }
 }
 
@@ -258,6 +268,7 @@ pub struct Store {
     header: WalHeader,
     limits: Limits,
     frames: Vec<FrameLocation>,
+    summaries: Vec<BlockSummary>,
     next_sequence: u64,
     end_offset: u64,
     last_known: Option<Timestamp>,
@@ -312,6 +323,7 @@ impl Store {
             header,
             limits,
             frames: Vec::new(),
+            summaries: Vec::new(),
             next_sequence: 0,
             end_offset: encoded.len() as u64,
             last_known: None,
@@ -346,6 +358,7 @@ impl Store {
             header,
             limits,
             frames: Vec::new(),
+            summaries: Vec::new(),
             next_sequence: 0,
             end_offset: WAL_HEADER_LEN as u64,
             last_known: None,
@@ -397,6 +410,24 @@ impl Store {
                         first,
                         count: records.len(),
                     });
+                    let mut summary = BlockSummary::new(
+                        (store.frames.len() - 1) as u32,
+                        store.end_offset,
+                        frame_bytes as u32,
+                        records[0].id.sequence,
+                        records[0].entity,
+                        records[0].schema,
+                        &records[0].times,
+                    );
+                    for record in &records[1..] {
+                        summary.update(
+                            record.id.sequence,
+                            record.entity,
+                            record.schema,
+                            &record.times,
+                        );
+                    }
+                    store.summaries.push(summary);
                     store.last_known = known;
                     store.end_offset = store
                         .end_offset
@@ -567,6 +598,24 @@ impl Store {
             first: self.next_sequence,
             count: records.len(),
         });
+        let mut summary = BlockSummary::new(
+            (self.frames.len() - 1) as u32,
+            self.end_offset,
+            encoded.len() as u32,
+            records[0].id.sequence,
+            records[0].entity,
+            records[0].schema,
+            &records[0].times,
+        );
+        for record in &records[1..] {
+            summary.update(
+                record.id.sequence,
+                record.entity,
+                record.schema,
+                &record.times,
+            );
+        }
+        self.summaries.push(summary);
         self.next_sequence = end;
         self.end_offset = new_offset;
         self.last_known = known;
@@ -598,6 +647,15 @@ impl Store {
     fn frame_for_sequence(&self, sequence: u64) -> Option<FrameLocation> {
         let index = self.frames.partition_point(|frame| frame.first <= sequence);
         index.checked_sub(1).map(|index| self.frames[index])
+    }
+
+    fn frame_index_for_sequence(&self, sequence: u64) -> Option<usize> {
+        let index = self.frames.partition_point(|frame| frame.first <= sequence);
+        index.checked_sub(1)
+    }
+
+    pub fn summaries(&self) -> &[BlockSummary] {
+        &self.summaries
     }
 
     fn read_indexed_frame(
@@ -686,9 +744,19 @@ impl Store {
             continuation: None,
         };
         while next < end {
-            let frame = self
-                .frame_for_sequence(next)
+            let frame_idx = self
+                .frame_index_for_sequence(next)
                 .ok_or(StorageError::InvalidCursor)?;
+            let frame = self.frames[frame_idx];
+
+            // Summary-guided predicate pushdown: skip entire frame if zero matches guaranteed
+            if let Some(summary) = self.summaries.get(frame_idx) {
+                if summary.matches_filter(&filter) == SkipDecision::Skip {
+                    next = frame.first + frame.count as u64;
+                    continue;
+                }
+            }
+
             if frame.length > budget.max_read_bytes || frame.count > budget.max_scanned {
                 if page.bytes_read != 0 {
                     break;
@@ -813,10 +881,31 @@ impl Store {
                 sync_directory(&directory)?;
                 report.segments_created += 1;
             }
+            let destination_tsm = directory.join(format!("{:020}-{:020}.tsm", frame.first, last));
+            if !destination_tsm
+                .try_exists()
+                .map_err(io_error("inspect summary path"))?
+            {
+                if let Some(block) = self.summaries.get(index) {
+                    let summary = SegmentSummary::new(
+                        self.header.database,
+                        self.header.source,
+                        self.header.epoch,
+                        vec![block.clone()],
+                    )?;
+                    fs::write(&destination_tsm, summary.encode())
+                        .map_err(io_error("write segment summary"))?;
+                }
+            }
             report.events += records.len() as u64;
         }
         Ok(report)
     }
+}
+
+pub fn read_segment_summary(path: impl AsRef<Path>) -> Result<SegmentSummary, StorageError> {
+    let bytes = fs::read(path).map_err(io_error("read segment summary"))?;
+    Ok(SegmentSummary::decode(&bytes)?)
 }
 
 fn validate_record(

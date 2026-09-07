@@ -504,6 +504,94 @@ fn acknowledged_records_survive_process_exit_without_destructors() {
 }
 
 #[test]
+fn seal_produces_companion_tsm_summaries_and_prunes_queries() {
+    use temnion_storage::read_segment_summary;
+
+    let directory = TestDirectory::new();
+    let mut store = create(&directory);
+
+    // Append batch 0 with entity 10
+    store
+        .append(vec![WriteEvent {
+            entity: EntityId {
+                shard: ShardId(0),
+                slot: 10,
+                generation: 1,
+            },
+            times: EventTimes {
+                valid: Timestamp::new(ClockId(1), 100),
+                observed: None,
+                known: Timestamp::new(ClockId(2), 100),
+            },
+            schema: SchemaId(1),
+            payload: vec![1, 2, 3],
+            causes: Vec::new(),
+        }])
+        .unwrap();
+
+    // Append batch 1 with entity 20
+    store
+        .append(vec![WriteEvent {
+            entity: EntityId {
+                shard: ShardId(0),
+                slot: 20,
+                generation: 1,
+            },
+            times: EventTimes {
+                valid: Timestamp::new(ClockId(1), 200),
+                observed: None,
+                known: Timestamp::new(ClockId(2), 200),
+            },
+            schema: SchemaId(1),
+            payload: vec![4, 5, 6],
+            causes: Vec::new(),
+        }])
+        .unwrap();
+
+    // Seal both batches into segments
+    let report = store.seal().unwrap();
+    assert_eq!(report.segments_created, 2);
+
+    // Verify .tsm companion summary files exist and can be read
+    let summary0_path = directory
+        .0
+        .join("segments")
+        .join(format!("{:020}-{:020}.tsm", 0, 0));
+    let summary1_path = directory
+        .0
+        .join("segments")
+        .join(format!("{:020}-{:020}.tsm", 1, 1));
+    assert!(summary0_path.exists());
+    assert!(summary1_path.exists());
+
+    let summary0 = read_segment_summary(&summary0_path).unwrap();
+    assert_eq!(summary0.sequence_range.min, 0);
+    assert_eq!(summary0.sequence_range.max, 0);
+    assert_eq!(summary0.blocks[0].entity_range.min.slot, 10);
+
+    let summary1 = read_segment_summary(&summary1_path).unwrap();
+    assert_eq!(summary1.sequence_range.min, 1);
+    assert_eq!(summary1.sequence_range.max, 1);
+    assert_eq!(summary1.blocks[0].entity_range.min.slot, 20);
+
+    // History query filtering by entity 20 should skip batch 0 completely
+    let filter_entity20 = HistoryFilter {
+        entity: Some(EntityId {
+            shard: ShardId(0),
+            slot: 20,
+            generation: 1,
+        }),
+        time: None,
+        known_as_of: None,
+    };
+    let page = store
+        .history(filter_entity20, StorageQueryBudget::default(), None)
+        .unwrap();
+    assert_eq!(page.events.len(), 1);
+    assert_eq!(page.events[0].id.sequence, 1);
+}
+
+#[test]
 #[ignore = "subprocess fixture; called by acknowledged_records_survive_process_exit_without_destructors"]
 fn crash_process_helper() {
     let directory = std::env::var_os("TEMNION_STORAGE_CRASH_DIR").expect("subprocess directory");

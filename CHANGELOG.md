@@ -1,6 +1,21 @@
 # Changelog
 
-## Unreleased - Timeline branching and causal DAG tracing (M13, M14, M15)
+## Unreleased - Hierarchical summaries and block skipping (M11, M12)
+
+- Added hierarchical summary and indexing engine (`temnion-index`), featuring `ZoneMap<T>`,
+  clock-scoped `TimestampZoneMap`, 512-bit `EntityBloomFilter` with 4 deterministic FNV-1a hash
+  seeds, `BlockSummary`, and `SegmentSummary` with binary serialization (`TNSM`) and CRC32C framing.
+- Integrated predicate pushdown into `temnion-storage`: `Store::history` evaluates block summaries
+  against query filters (entity, valid time, known-as-of) and skips unmatching batch frames without
+  reading from disk or performing frame decompression, mathematically guaranteeing zero false negatives.
+- Enhanced `Store::seal` to export companion `.tsm` summary files (`{:020}-{:020}.tsm`) alongside `.tsf`
+  immutable segments.
+- Added CLI command `inspect-summary` to `tem` to validate `.tsm` summary files and print zone map bounds,
+  and registered capability `hierarchical-summaries`.
+- Published ADR 0005 documenting hierarchical summaries, clock domain isolation, Bloom filters, and
+  predicate pushdown block skipping.
+
+## Timeline branching and causal DAG tracing (M13, M14, M15)
 
 - Added structurally shared branching timelines and persistent DAG manifests (`temnion-branch`),
   featuring $O(1)$ zero-payload-duplication forks, atomic `.tmp` to rename manifest updates (`TNBM`),

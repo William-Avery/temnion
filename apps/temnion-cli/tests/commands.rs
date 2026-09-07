@@ -38,6 +38,7 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"tsf\": true"));
     assert!(text.contains("\"storage\": \"volatile-memory-and-os-synced-source-log\""));
     assert!(text.contains("\"scalar-schemas\""));
+    assert!(text.contains("\"hierarchical-summaries\""));
 }
 
 #[test]
@@ -134,6 +135,22 @@ fn durable_cli_roundtrip_across_independent_processes() {
         .unwrap();
     assert!(verified.status.success());
     assert!(String::from_utf8_lossy(&verified.stdout).contains("Valid TSF: records=1"));
+
+    let summary = directory
+        .0
+        .join("segments")
+        .join(format!("{:020}-{:020}.tsm", 0, 0));
+    let inspected = Command::new(env!("CARGO_BIN_EXE_tem"))
+        .arg("inspect-summary")
+        .arg(summary)
+        .output()
+        .unwrap();
+    assert!(inspected.status.success());
+    let inspected_stdout = String::from_utf8_lossy(&inspected.stdout);
+    assert!(inspected_stdout.contains("Valid TSM: records=1 blocks=1"));
+    assert!(inspected_stdout.contains("Sequence: 0..=0"));
+    assert!(inspected_stdout.contains("Valid time: clock=1 5..=5"));
+    assert!(inspected_stdout.contains("Known time: clock=2 10..=10"));
 }
 
 #[test]
