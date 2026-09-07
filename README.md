@@ -3,6 +3,8 @@
 **A standalone, Rust-first exact-state and history engine, built in explicit
 milestones.**
 
+![Temnion overview showing live state, immutable history, querying, agent memory, interfaces, architecture, evolution, Studio, and operational defaults](docs/assets/temnion-overview.png)
+
 Temnion separates live state from append-only evidence. Its long-term architecture
 adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
