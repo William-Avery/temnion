@@ -653,10 +653,8 @@ impl EGraph {
                                         matches_to_union.push((canon_root, l_root));
                                     }
                                 }
-                                BinaryOp::Eq => {
-                                    if l_root == r_root {
-                                        matches_to_union.push((canon_root, canon_true));
-                                    }
+                                BinaryOp::Eq if l_root == r_root => {
+                                    matches_to_union.push((canon_root, canon_true));
                                 }
                                 _ => {}
                             }
