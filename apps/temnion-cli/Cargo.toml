@@ -20,6 +20,8 @@ temnion-storage.workspace = true
 temnion-schema.workspace = true
 temnion-codec.workspace = true
 temnion-replay.workspace = true
+temnion-causal.workspace = true
+temnion-branch.workspace = true
 
 [lints]
 workspace = true

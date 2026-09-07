@@ -1,6 +1,20 @@
 # Changelog
 
-## Unreleased - Deterministic replay and lossless codecs increment (M3 & M5)
+## Unreleased - Timeline branching and causal DAG tracing (M13, M14, M15)
+
+- Added structurally shared branching timelines and persistent DAG manifests (`temnion-branch`),
+  featuring $O(1)$ zero-payload-duplication forks, atomic `.tmp` to rename manifest updates (`TNBM`),
+  branch lifecycle states (Active, Temporary, Candidate, Promoted, Retired), and interval-based
+  timeline resolution (`resolve_timeline`) with ancestor chain traversal.
+- Added first-class causal graph engine (`temnion-causal`), featuring compact CSR-packed index
+  representation (`TNCG`), bidirectional immediate queries (`immediate_causes`, `immediate_effects`),
+  bounded transitive DAG tracing (`trace_causes`, `trace_effects`), topological sorting, cycle detection,
+  and causal ancestry checks.
+- Added CLI commands `branch-create`, `branch-list`, and `causal-trace` to `tem`, supported optional
+  causes in `tem append`, and registered capabilities `branching-timelines` and `causal-graph`.
+- Published ADR 0004 documenting timeline branching, persistent DAG manifests, and causal DAG tracing.
+
+## Deterministic replay and lossless codecs increment (M3 & M5)
 
 - Added deterministic state reconstruction and replay engine (`temnion-replay`) with
   periodic checksummed checkpoints (`TNCP`), SplitMix64 step-counted PRNG tracking,

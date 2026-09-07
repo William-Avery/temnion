@@ -251,3 +251,105 @@ fn checkpoint_and_reconstruct_cli_roundtrip() {
     assert!(text1.contains("entity=0:1:0 schema=1 payload_bytes=4"));
     assert!(text1.contains("entity=0:2:0 schema=1 payload_bytes=4"));
 }
+
+#[test]
+fn branch_lifecycle_and_listing_cli_roundtrip() {
+    let directory = DatabaseDirectory::new();
+    assert!(directory.command("init", &[]).status.success());
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:100", "2:200", "aabbccdd"])
+            .status
+            .success()
+    );
+
+    // Initial branch-list should show root branch 0
+    let list0 = directory.command("branch-list", &[]);
+    assert!(
+        list0.status.success(),
+        "{}",
+        String::from_utf8_lossy(&list0.stderr)
+    );
+    let list0_text = String::from_utf8(list0.stdout).unwrap();
+    assert!(list0_text.contains("id=0 name=\"main\" root=true lifecycle=active"));
+
+    // Fork a new branch "experiment" from parent 0 at sequence 0
+    let create = directory.command("branch-create", &["experiment", "0", "0"]);
+    assert!(
+        create.status.success(),
+        "{}",
+        String::from_utf8_lossy(&create.stderr)
+    );
+    let create_text = String::from_utf8(create.stdout).unwrap();
+    assert!(
+        create_text.contains("Branch created id=1 name=\"experiment\" parent=0 fork_sequence=0")
+    );
+
+    // List branches again, verifying both root and the candidate fork exist
+    let list1 = directory.command("branch-list", &[]);
+    assert!(list1.status.success());
+    let list1_text = String::from_utf8(list1.stdout).unwrap();
+    assert!(list1_text.contains("id=0 name=\"main\" root=true lifecycle=active"));
+    assert!(
+        list1_text
+            .contains("id=1 name=\"experiment\" parent=0 fork_sequence=0 lifecycle=candidate")
+    );
+}
+
+#[test]
+fn causal_trace_cli_roundtrip() {
+    let directory = DatabaseDirectory::new();
+    assert!(directory.command("init", &[]).status.success());
+
+    // Append root event e0 (source=1, epoch=1, seq=0) with no causes
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:100", "2:200", "1111"])
+            .status
+            .success()
+    );
+
+    // Append e1 caused by e0 (1:1:0)
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:101", "2:201", "2222", "1:1:0"])
+            .status
+            .success()
+    );
+
+    // Append e2 caused by e1 (1:1:1)
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:102", "2:202", "3333", "1:1:1"])
+            .status
+            .success()
+    );
+
+    // Trace event 1 (e1): should have upstream cause e0 (depth=1) and downstream effect e2 (depth=1)
+    let trace1 = directory.command("causal-trace", &["1"]);
+    assert!(
+        trace1.status.success(),
+        "{}",
+        String::from_utf8_lossy(&trace1.stderr)
+    );
+    let trace1_text = String::from_utf8(trace1.stdout).unwrap();
+    assert!(trace1_text.contains("Causal Trace for Event 1:1:1:"));
+    assert!(trace1_text.contains("Upstream Causes (total=1):"));
+    assert!(trace1_text.contains("depth=1 event=1:1:0"));
+    assert!(trace1_text.contains("Downstream Effects (total=1):"));
+    assert!(trace1_text.contains("depth=1 event=1:1:2"));
+
+    // Trace event 2 (e2): should have upstream causes e1 (depth 1) and e0 (depth 2)
+    let trace2 = directory.command("causal-trace", &["2", "5"]);
+    assert!(
+        trace2.status.success(),
+        "{}",
+        String::from_utf8_lossy(&trace2.stderr)
+    );
+    let trace2_text = String::from_utf8(trace2.stdout).unwrap();
+    assert!(trace2_text.contains("Causal Trace for Event 1:1:2:"));
+    assert!(trace2_text.contains("Upstream Causes (total=2):"));
+    assert!(trace2_text.contains("depth=1 event=1:1:1"));
+    assert!(trace2_text.contains("depth=2 event=1:1:0"));
+    assert!(trace2_text.contains("Downstream Effects (total=0):"));
+}

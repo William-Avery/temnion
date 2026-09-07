@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, and M5 lossless codecs.**
+**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, M5 lossless codecs, M13 branching timelines, M14 multi-time semantics, and M15 causal DAG tracing.**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -23,11 +23,17 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   and verified bit-for-bit deterministic replay equivalence (`temnion-replay`).
 - Strictly lossless codec framework (`temnion-codec`) with Raw, RLE, BitPack, Delta-FOR,
   and XOR compression, CRC32C framing, and dynamic candidate scoring.
-- Durable CLI operations, checkpoint/reconstruct/evaluate-codecs commands, and a separate synchronized batch/reference benchmark.
+- Persistent timeline branching and structural sharing (`temnion-branch`) with $O(1)$
+  zero-duplication forks, persistent manifests (`TNBM`), and interval timeline resolution.
+- First-class causal graph representation (`temnion-causal`) with CSR-packed index (`TNCG`),
+  bidirectional immediate queries, transitive causal/effect cone tracing, topological sort,
+  and cycle detection.
+- Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
+  and causal-trace commands.
 
 This does **not** complete R0 or R1: most T01 specifications, most A–L workloads,
-full N-D schemas, manifest-based lifecycle, branches and causal graphs remain future work.
-It does not complete M14 temporal reconstruction or M18 protocol negotiation.
+full N-D schemas, manifest-based lifecycle, and virtual-shard execution remain future work.
+It does not complete M18 protocol negotiation or full TemQL.
 No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
 See [README](../README.md) for the implemented package inventory.
 
@@ -75,7 +81,7 @@ all workloads and Studio feasibility are not claimed complete by the initial CLI
 | --- | --- | --- |
 | T03 — Typed state and events | Packed state, scalar schemas and mutation encoding | Generation-safe state and typed scalar/nullable/unit metadata with sparse atomic apply; N-D schemas, persistent schema registration and full input semantics remain unfinished. |
 | T04 — WAL, TSF and recovery | Durable source-log increment | OS-synchronized batches, bounded checksummed WAL/TSF v1, strict recovery and immutable export are implemented. WAL remains authoritative; manifest activation/retirement and its fault matrix remain unfinished. |
-| T05 — Replay, branches and causality | Checkpoints, deterministic RNG and reconstruction foundation (M3) | Checkpoints, deterministic providers with captured inputs/RNG, temporal reconstruction, causal edges and structurally shared branch manifests. Replay equivalence between checkpoint resume and fresh playback is verified. Branches and causal edges remain future work. |
+| T05 — Replay, branches and causality | Replay, checkpoints, branching (M13), and causal DAG tracing (M15) implemented | Checkpoints, deterministic providers with captured inputs/RNG, temporal reconstruction, causal edges and structurally shared branch manifests. Replay equivalence between checkpoint resume and fresh playback is verified. Branch manifests with O(1) zero-duplication fork and CSR-packed causal DAG tracing are implemented. |
 | T06 — Canonical query and languages | Future | Typed logical/physical IR, reference executor, predicates/projections/aggregations, subscriptions, prepared queries, budgets/cancellation/cursors, capability discovery and EXPLAIN. TemQL/Tem parsers must be equivalent to native execution and errors. |
 
 Exit: ingest -> durable receipt -> crash/restart -> historical query ->
@@ -170,9 +176,9 @@ original files retain their historical names unchanged.
 | M0 | Specification and benchmark harness | T00–T02 | Foundation; full specs/A–L incomplete |
 | M1 | Packed live state | T03 | Implemented foundation |
 | M2 | Event history/deltas | T03 | Volatile history plus typed scalar sparse mutation encoding; N-D engine/schema registry remains |
-| M3 | Deterministic reconstruction | T05 | Future |
+| M3 | Deterministic reconstruction | T05 | Checkpoints, SplitMix64 PRNG tracking, and verified replay equivalence (`temnion-replay`) |
 | M4 | Immutable segment format | T04 | Bounded raw TSF v1 and synchronized WAL/recovery; manifest lifecycle remains |
-| M5 | Compression framework | T07 | Future |
+| M5 | Compression framework | T07 | Lossless codec framework (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring (`temnion-codec`) |
 | M6 | N-dimensional chunking/layouts | T07 | Future candidates |
 | M7 | Alternate projections | T07 | Future |
 | M8 | Virtual-shard execution | T08 | Future |
@@ -180,9 +186,9 @@ original files retain their historical names unchanged.
 | M10 | Storage hierarchy | T08 | Future |
 | M11 | Filters/compressed execution | T07 | Future |
 | M12 | Hierarchical summaries | T07 | Future |
-| M13 | Branching timelines | T05 | Future |
-| M14 | Multi-time semantics | T03/T06 | Typed clocks/filter subset; reconstruction future |
-| M15 | Causal history | T05/T20 | Future |
+| M13 | Branching timelines | T05 | Structurally shared timeline branching and persistent DAG manifests (`temnion-branch`) |
+| M14 | Multi-time semantics | T03/T06 | Typed clocks/filter subset; valid/known time preserved across branches and intervals |
+| M15 | Causal history | T05/T20 | CSR-packed causal graph, bidirectional traversal, and transitive cone tracing (`temnion-causal`) |
 | M16 | Typed Query IR | T01/T06 | Future; foundation contract decision only |
 | M17 | TemQL and compact Tem | T01/T06 | Future |
 | M18 | Protocol/capabilities | T01/T06/T11 | CLI capability report only; protocol future |

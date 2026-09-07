@@ -56,9 +56,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "temnion-branch"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "getrandom",
+ "temnion-core",
+ "temnion-format",
+ "temnion-replay",
+ "temnion-storage",
+]
+
+[[package]]
+name = "temnion-causal"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "temnion-core",
+ "temnion-format",
+]
+
+[[package]]
 name = "temnion-cli"
 version = "0.1.0"
 dependencies = [
+ "temnion-branch",
+ "temnion-causal",
  "temnion-codec",
  "temnion-core",
  "temnion-events",

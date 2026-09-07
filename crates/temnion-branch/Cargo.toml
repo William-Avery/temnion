@@ -1,0 +1,19 @@
+[package]
+name = "temnion-branch"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Structurally shared timeline branching and persistent DAG manifests for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-format.workspace = true
+temnion-storage.workspace = true
+temnion-replay.workspace = true
+crc32fast = "1.4"
+getrandom = "0.2"
+
+[lints]
+workspace = true

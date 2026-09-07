@@ -5,9 +5,12 @@ use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
+use temnion_branch::{BranchLifecycle, BranchManager};
+use temnion_causal::CausalGraph;
 use temnion_codec::CodecScorer;
 use temnion_core::{
-    ClockId, EntityId, EventTimes, SchemaId, ShardId, SourceEpoch, SourceId, Timestamp,
+    BranchId, ClockId, EntityId, EventId, EventTimes, SchemaId, ShardId, SourceEpoch, SourceId,
+    Timestamp,
 };
 use temnion_events::{EventInput, EventLog, HistoryFilter, QueryBudget};
 use temnion_format::{Limits, StoredEvent, decode_segment};
@@ -22,7 +25,7 @@ tem - Temnion CLI
 
 Usage: tem [help | version | describe | demo]
        tem init <database-directory>
-       tem append <directory> <shard:slot:generation> <schema-id> <valid-clock:tick> <known-clock:tick> <hex-payload>
+       tem append <directory> <shard:slot:generation> <schema-id> <valid-clock:tick> <known-clock:tick> <hex-payload> [causes]
        tem history <directory> [row-limit]
        tem inspect <directory>
        tem recover <directory>
@@ -31,6 +34,9 @@ Usage: tem [help | version | describe | demo]
        tem checkpoint <directory>
        tem reconstruct <directory> <sequence>
        tem evaluate-codecs
+       tem branch-create <directory> <name> [parent-id] [fork-seq]
+       tem branch-list <directory>
+       tem causal-trace <directory> <sequence> [max-depth]
 
   help       Show this help
   version    Show the version
@@ -46,6 +52,9 @@ Usage: tem [help | version | describe | demo]
   checkpoint      Take an atomic checksummed state checkpoint pinned to current WAL sequence
   reconstruct     Deterministically replay WAL events to target sequence
   evaluate-codecs Evaluate candidate lossless codecs on representative streams
+  branch-create   Fork a new timeline sharing all ancestor segments (O(1) fork)
+  branch-list     List all timeline branches and lifecycle states in database
+  causal-trace    Trace transitive causal ancestry and effect cones for an event
 
 The append command is a low-level schema-ID/opaque-payload interface.
 Ordinary open never silently truncates history. temniond, TemQL, TNP,
@@ -63,7 +72,8 @@ const CAPABILITIES: &str = concat!(
     "\"typed-events\", \"atomic-batch-admission\", \"entity-history\", ",
     "\"time-range-filter\", \"known-as-of\", \"bounded-snapshot-pagination\", ",
     "\"scalar-schemas\", \"wal-recovery\", \"immutable-tsf-export\", ",
-    "\"deterministic-reconstruction\", \"lossless-codecs\"],\n",
+    "\"deterministic-reconstruction\", \"lossless-codecs\", ",
+    "\"branching-timelines\", \"causal-graph\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": false,\n",
@@ -197,6 +207,30 @@ fn decode_hex(value: &OsStr) -> Result<Vec<u8>, Box<dyn Error>> {
     Ok(payload)
 }
 
+fn parse_causes(value: &OsStr) -> Result<Vec<EventId>, Box<dyn Error>> {
+    let s = text(value)?;
+    if s.is_empty() || s == "-" || s == "none" {
+        return Ok(Vec::new());
+    }
+    let mut causes = Vec::new();
+    for part in s.split(',') {
+        let trimmed = part.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        let comps: Vec<_> = trimmed.split(':').collect();
+        if comps.len() != 3 {
+            return Err("cause event id must be source:epoch:sequence".into());
+        }
+        causes.push(EventId {
+            source: SourceId(comps[0].parse()?),
+            epoch: SourceEpoch(comps[1].parse()?),
+            sequence: comps[2].parse()?,
+        });
+    }
+    Ok(causes)
+}
+
 fn open_store(path: &OsStr) -> Result<Store, Box<dyn Error>> {
     Ok(Store::open(
         Path::new(path),
@@ -311,7 +345,15 @@ fn run() -> Result<(), Box<dyn Error>> {
                 "Created database {id}; source=1 epoch=1; acknowledgment=OS-sync"
             )?;
         }
-        ("append", [path, entity, schema, valid, known, payload]) => {
+        (
+            "append",
+            [path, entity, schema, valid, known, payload]
+            | [path, entity, schema, valid, known, payload, _],
+        ) => {
+            let causes = match parameters.get(6) {
+                Some(v) => parse_causes(v)?,
+                None => Vec::new(),
+            };
             let input = WriteEvent {
                 entity: parse_entity(entity)?,
                 schema: SchemaId(text(schema)?.parse()?),
@@ -321,7 +363,7 @@ fn run() -> Result<(), Box<dyn Error>> {
                     known: parse_time(known)?,
                 },
                 payload: decode_hex(payload)?,
-                causes: Vec::new(),
+                causes,
             };
             let mut store = open_store(path)?;
             let receipt = store.append(vec![input])?;
@@ -469,6 +511,132 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         ("evaluate-codecs", []) => {
             evaluate_codecs_cmd(&mut out)?;
+        }
+        ("branch-create", [path, name] | [path, name, _] | [path, name, _, _]) => {
+            let path = Path::new(path);
+            let name_str = text(name)?;
+            let parent_id = match parameters.get(2) {
+                Some(v) => BranchId(text(v)?.parse()?),
+                None => BranchId(0),
+            };
+            let mut mgr = BranchManager::open(path)?;
+            let fork_seq = match parameters.get(3) {
+                Some(v) => text(v)?.parse()?,
+                None => {
+                    let p_dir = mgr.branch_directory(parent_id);
+                    let store = open_store(p_dir.as_os_str())?;
+                    if store.is_empty() { 0 } else { store.len() - 1 }
+                }
+            };
+            let new_id = mgr.create_fork(
+                parent_id,
+                name_str.to_string(),
+                fork_seq,
+                BranchLifecycle::Candidate,
+            )?;
+            writeln!(
+                out,
+                "Branch created id={} name=\"{}\" parent={} fork_sequence={}",
+                new_id.0, name_str, parent_id.0, fork_seq
+            )?;
+        }
+        ("branch-list", [path]) => {
+            let mgr = BranchManager::open(Path::new(path))?;
+            writeln!(out, "Branches in database {}:", mgr.manifest().database)?;
+            for (&id, meta) in &mgr.manifest().branches {
+                match meta.parent {
+                    Some((parent_id, fork_seq)) => {
+                        writeln!(
+                            out,
+                            "  id={} name=\"{}\" parent={} fork_sequence={} lifecycle={}",
+                            id.0,
+                            meta.name,
+                            parent_id.0,
+                            fork_seq,
+                            meta.lifecycle.as_str()
+                        )?;
+                    }
+                    None => {
+                        writeln!(
+                            out,
+                            "  id={} name=\"{}\" root=true lifecycle={}",
+                            id.0,
+                            meta.name,
+                            meta.lifecycle.as_str()
+                        )?;
+                    }
+                }
+            }
+        }
+        ("causal-trace", [path, seq_val] | [path, seq_val, _]) => {
+            let target_seq = text(seq_val)?.parse::<u64>()?;
+            let depth = parameters
+                .get(2)
+                .map(|v| text(v)?.parse::<usize>().map_err(Box::<dyn Error>::from))
+                .transpose()?
+                .unwrap_or(10);
+
+            let mut store = open_store(path)?;
+            let page = store.history(
+                HistoryFilter::default(),
+                StorageQueryBudget {
+                    max_results: 65_536,
+                    max_scanned: 65_536,
+                    max_read_bytes: 64 * 1024 * 1024,
+                },
+                None,
+            )?;
+
+            let mut graph = CausalGraph::new();
+            let mut target_event = None;
+
+            for event in page.events {
+                if event.id.sequence == target_seq {
+                    target_event = Some(event.id);
+                }
+                let _ = graph.add_event(event.id, event.causes);
+            }
+
+            let root =
+                target_event.ok_or_else(|| format!("event sequence {target_seq} not found"))?;
+            let causes_trace = graph.trace_causes(root, depth);
+            let effects_trace = graph.trace_effects(root, depth);
+
+            writeln!(
+                out,
+                "Causal Trace for Event {}:{}:{}:",
+                root.source.0, root.epoch.0, root.sequence
+            )?;
+            writeln!(
+                out,
+                "  Upstream Causes (total={}):",
+                causes_trace.events.len().saturating_sub(1)
+            )?;
+            for &c in &causes_trace.events {
+                if c != root {
+                    let d = causes_trace.depths.get(&c).copied().unwrap_or(0);
+                    writeln!(
+                        out,
+                        "    depth={} event={}:{}:{}",
+                        d, c.source.0, c.epoch.0, c.sequence
+                    )?;
+                }
+            }
+            writeln!(
+                out,
+                "  Downstream Effects (total={}):",
+                effects_trace.events.len().saturating_sub(1)
+            )?;
+            for &e in &effects_trace.events {
+                if e != root {
+                    let d = effects_trace.depths.get(&e).copied().unwrap_or(0);
+                    writeln!(
+                        out,
+                        "    depth={} event={}:{}:{}",
+                        d, e.source.0, e.epoch.0, e.sequence
+                    )?;
+                }
+            }
         }
         _ => {
             return Err(format!(
