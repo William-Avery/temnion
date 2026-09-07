@@ -25,10 +25,10 @@ Do not add a project copyright header inside the canonical FSF license text.
 | Item | Role / boundary | License and update consideration |
 | --- | --- | --- |
 | Rust 1.85.0, Cargo, rustfmt, Clippy, standard library | Pinned headless toolchain; latest stable is an extra CI check | Rust components carry their own MIT/Apache-2.0 and component-specific third-party notices; use upstream distributions and preserve required notices when redistributing |
-| `actions/checkout` v4.3.1 | Hosted CI source checkout only; `34e114876b0b11c390a56381ad16ebd13914f8d5` | MIT; action dependencies retain their own notices |
+| `actions/checkout` v7.0.1 | Hosted CI source checkout only; `3d3c42e5aac5ba805825da76410c181273ba90b1` | MIT; action dependencies retain their own notices |
 | GitHub-hosted runner images | Windows x64/Linux x64 validation; Linux ARM64 cross-check only | Runner software is not Temnion source and is not relicensed by the commercial notice |
 
-The checkout revision was resolved from the official repository's v4.3.1 tag.
+The checkout revision was resolved from the official repository's v7.0.1 tag.
 The action entrypoint, inputs and changelog were inspected for this use. It is
 configured with `persist-credentials: false` and read-only repository permissions.
 This limited integration review is not a claim of a complete third-party
