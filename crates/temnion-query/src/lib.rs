@@ -710,6 +710,10 @@ pub fn parse_temql(input: &str) -> Result<LogicalPlan, QueryError> {
                 .parse()
                 .map_err(|e| QueryError::ParseError(format!("Invalid LIMIT: {e}")))?;
             limit = Some(lim);
+        } else {
+            return Err(QueryError::ParseError(format!(
+                "Unrecognized TemQL clause: '{line}'"
+            )));
         }
     }
 
@@ -939,7 +943,8 @@ pub fn parse_compact_tem(input: &str) -> Result<LogicalPlan, QueryError> {
 }
 
 fn parse_entity_id(s: &str) -> Result<EntityId, QueryError> {
-    let parts: Vec<&str> = s.split(':').collect();
+    let clean = s.strip_prefix('#').unwrap_or(s).trim();
+    let parts: Vec<&str> = clean.split(':').collect();
     if parts.len() == 3 {
         let shard: u32 = parts[0]
             .parse()
@@ -972,7 +977,8 @@ fn parse_entity_id(s: &str) -> Result<EntityId, QueryError> {
 }
 
 fn parse_event_id(s: &str) -> Result<EventId, QueryError> {
-    let parts: Vec<&str> = s.split(':').collect();
+    let clean = s.strip_prefix('$').unwrap_or(s).trim();
+    let parts: Vec<&str> = clean.split(':').collect();
     if parts.len() != 3 {
         return Err(QueryError::ParseError(format!(
             "Invalid event ID format: {s}, expected source:epoch:seq"

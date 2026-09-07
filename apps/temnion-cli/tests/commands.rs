@@ -31,10 +31,11 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     let result = tem(&["describe"]);
     assert!(result.status.success());
     let text = String::from_utf8(result.stdout).unwrap();
-    for capability in ["server", "tnp", "mcp", "studio"] {
+    for capability in ["server", "mcp", "studio"] {
         assert!(text.contains(&format!("\"{capability}\": false")));
     }
     assert!(text.contains("\"temql\": true"));
+    assert!(text.contains("\"tnp\": true"));
     assert!(text.contains("\"durable\": true"));
     assert!(text.contains("\"tsf\": true"));
     assert!(text.contains("\"storage\": \"volatile-memory-and-os-synced-source-log\""));
@@ -47,6 +48,10 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"storage-hierarchy\""));
     assert!(text.contains("\"query-ir\""));
     assert!(text.contains("\"compact-tem\""));
+    assert!(text.contains("\"tnp\""));
+    assert!(text.contains("\"local-ipc\""));
+    assert!(text.contains("\"arrow-columnar\""));
+    assert!(text.contains("\"c-abi\""));
 }
 
 #[test]

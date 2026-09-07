@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+[package]
+name = "temnion-protocol"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "TNP protocol framing, negotiation, local IPC, Arrow columnar format, and C ABI for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-format.workspace = true
+temnion-storage.workspace = true
+temnion-query.workspace = true
+crc32fast.workspace = true
+
+[lints]
+workspace = true
