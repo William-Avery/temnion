@@ -8,7 +8,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, and hierarchical summaries.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, and alternate projections.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
 > and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
@@ -17,7 +17,8 @@ first consumer, not a dependency of the database core.
 > provides structurally shared branching timelines and persistent DAG manifests.
 > `temnion-causal` provides CSR-packed causal graphs and bidirectional DAG tracing.
 > `temnion-index` provides hierarchical summaries, clock-scoped zone maps, entity
-> Bloom filters, and zero-false-negative predicate pushdown block skipping.
+> Bloom filters, Morton 2D/3D space-filling curves, and zero-payload-duplication
+> alternate projections.
 
 ## What works now
 
@@ -30,7 +31,7 @@ first consumer, not a dependency of the database core.
 | `temnion-format` | Versioned, bounded, checksummed WAL headers/batches and independently readable raw TSF v1 segments |
 | `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, predicate pushdown block skipping and companion TSM export |
 | `temnion-codec` | Strictly lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with CRC32C framing, dynamic scoring and raw fallback |
-| `temnion-index` | Hierarchical block/segment summaries (TNSM), clock-scoped zone maps, entity Bloom filters and zero-false-negative block skipping |
+| `temnion-index` | Hierarchical summaries (TNSM), zone maps, Bloom filters, Morton 2D/3D SFC layouts, and zero-duplication alternate projections (TNPR) |
 | `temnion-replay` | Deterministic reconstruction, periodic atomic checkpoints (TNCP), SplitMix64 step-counted PRNG tracking and bit-for-bit replay equivalence |
 | `temnion-branch` | Structurally shared timeline branching, zero-payload-duplication forks, atomic manifest updates (TNBM), lifecycle states, and interval timeline resolution |
 | `temnion-causal` | First-class causal graph (TNCG), CSR-packed flat indexing, bidirectional immediate queries, transitive causal/effect cone tracing, topological sort, and cycle detection |
@@ -38,7 +39,8 @@ first consumer, not a dependency of the database core.
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
-with zone maps and Bloom filters, and bounded frame decoding. Startup scans the authoritative WAL.
+with zone maps and Bloom filters, zero-duplication alternate projections, and bounded frame decoding.
+Startup scans the authoritative WAL.
 Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 

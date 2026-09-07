@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, M5 lossless codecs, M11 filters and block skipping, M12 hierarchical summaries, M13 branching timelines, M14 multi-time semantics, and M15 causal DAG tracing.**
+**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, M5 lossless codecs, M6 N-D layouts, M7 alternate projections, M11 filters and block skipping, M12 hierarchical summaries, M13 branching timelines, M14 multi-time semantics, and M15 causal DAG tracing.**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -31,6 +31,11 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 - Hierarchical summaries and block skipping (`temnion-index`) with zero-false-negative zone maps,
   clock-scoped timestamp bounds, entity Bloom filters, predicate pushdown during query execution
   (`temnion-storage`), and companion `.tsm` segment summary exports.
+- N-dimensional chunking and Morton space-filling curves (`temnion-index`), with 2D/3D bit-dilation,
+  bounding box range decomposition, and uniform grid chunkers.
+- Zero-payload-duplication alternate projections (`temnion-index`), providing inverted entity,
+  temporal, spatial Morton, and schema bitmap indexing with multi-predicate intersection and
+  CRC32C-framed binary persistence (`TNPR`).
 - Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
   causal-trace, and inspect-summary commands.
 
@@ -95,7 +100,7 @@ Cross-shard transactions are not silently inferred from source-local atomicity.
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
-| T07 — Efficient immutable representations | Lossless codecs (M5), hierarchical summaries (M12) and block skipping (M11) implemented; candidates gated | Useful lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring and raw fallback. Hierarchical summaries (`temnion-index`) with clock-scoped zone maps, entity Bloom filters, and zero-false-negative predicate pushdown block skipping in storage. Grid/Morton candidates, projections, and bitmaps remain future work. |
+| T07 — Efficient immutable representations | Lossless codecs (M5), Morton N-D layouts (M6), alternate projections (M7), block skipping (M11), and hierarchical summaries (M12) implemented; candidates gated | Lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring and raw fallback. Morton 2D/3D space-filling curve encoding, grid chunking, and bounding box interval decomposition. Zero-duplication alternate projections (entity, temporal, spatial, schema) with multi-predicate intersection. Hierarchical summaries (`temnion-index`) with clock-scoped zone maps, entity Bloom filters, and zero-false-negative predicate pushdown block skipping in storage. Hilbert/ALP candidates remain future work. |
 | T08 — Virtual-shard runtime and tiers | Future | Bounded queues, owned shard groups, local allocators, consistent cross-shard cuts, bounded fanout/merge and resumable background DAGs. Portable DRAM/page-cache/NVMe first; exercise skew, saturation, storage pressure and interrupted work. |
 | T09 — Embedded Tzeentch integration | Future | Separate feature-gated adapter and consumer change: fixtures/import, idempotency, bounded mirrored writes, drain/error reporting, historical-read parity and a rollback switch. Keep existing recorder/memory behavior authoritative until gates pass. |
 | T10 — Operations and enforcement | Future | Health/metrics, policy/authorization hooks, exact no-auto-delete retention, reference-aware GC, backup/restore, inspection/repair, schema/format migration and auditable operations. Validate recovery and foreground resource protection. |
@@ -182,13 +187,13 @@ original files retain their historical names unchanged.
 | M3 | Deterministic reconstruction | T05 | Checkpoints, SplitMix64 PRNG tracking, and verified replay equivalence (`temnion-replay`) |
 | M4 | Immutable segment format | T04 | Bounded raw TSF v1 and synchronized WAL/recovery; manifest lifecycle remains |
 | M5 | Compression framework | T07 | Lossless codec framework (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring (`temnion-codec`) |
-| M6 | N-dimensional chunking/layouts | T07 | Future candidates |
-| M7 | Alternate projections | T07 | Future |
+| M6 | N-dimensional chunking/layouts | T07 | Morton 2D/3D SFC bit-dilation, bounding box decomposition, and uniform grid chunking (`temnion-index`) |
+| M7 | Alternate projections | T07 | Zero-duplication entity, temporal, spatial Morton, and schema projections with multi-predicate intersection (`temnion-index`) |
 | M8 | Virtual-shard execution | T08 | Future |
 | M9 | Background task DAG | T08 | Future |
 | M10 | Storage hierarchy | T08 | Future |
-| M11 | Filters/compressed execution | T07 | Future |
-| M12 | Hierarchical summaries | T07 | Future |
+| M11 | Filters/compressed execution | T07 | Zone maps, entity Bloom filters, and storage predicate pushdown block skipping (`temnion-index`, `temnion-storage`) |
+| M12 | Hierarchical summaries | T07 | Block and segment summaries, binary TNSM framing, and companion TSM segment exports (`temnion-index`, `temnion-storage`) |
 | M13 | Branching timelines | T05 | Structurally shared timeline branching and persistent DAG manifests (`temnion-branch`) |
 | M14 | Multi-time semantics | T03/T06 | Typed clocks/filter subset; valid/known time preserved across branches and intervals |
 | M15 | Causal history | T05/T20 | CSR-packed causal graph, bidirectional traversal, and transitive cone tracing (`temnion-causal`) |
