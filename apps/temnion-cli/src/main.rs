@@ -16,8 +16,8 @@ use temnion_events::{EventInput, EventLog, HistoryFilter, QueryBudget};
 use temnion_format::{Limits, StoredEvent, decode_segment};
 use temnion_mcp::McpServer;
 use temnion_query::{
-    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_temql,
-    plan_query,
+    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_sql,
+    parse_temql, plan_query,
 };
 use temnion_replay::{
     Checkpoint, RawEntityReducer, ReplayEngine, decode_raw_entity_map, encode_raw_entity_map,
@@ -65,8 +65,8 @@ Usage: tem [help | version | describe | demo]
   branch-create   Fork a new timeline sharing all ancestor segments (O(1) fork)
   branch-list     List all timeline branches and lifecycle states in database
   causal-trace    Trace transitive causal ancestry and effect cones for an event
-  query           Execute a TemQL or compact tn: query against a database
-  explain         Parse a TemQL or compact tn: query and show the physical execution plan
+  query           Execute a TemQL, compact tn:, or SQL query against a database
+  explain         Parse a TemQL, compact tn:, or SQL query and show the physical execution plan
   mcp             Run the Model Context Protocol (MCP) server over stdio
 
 The append command is a low-level schema-ID/opaque-payload interface.
@@ -89,11 +89,12 @@ const CAPABILITIES: &str = concat!(
     "\"branching-timelines\", \"causal-graph\", \"hierarchical-summaries\", ",
     "\"nd-layouts\", \"alternate-projections\", \"virtual-shards\", ",
     "\"background-dag\", \"storage-hierarchy\", \"query-ir\", \"temql\", ",
-    "\"compact-tem\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\", ",
+    "\"compact-tem\", \"sql\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\", ",
     "\"flight\", \"mcp\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
+    "  \"sql\": true,\n",
     "  \"tnp\": true,\n",
     "  \"tsf\": true,\n",
     "  \"mcp\": true,\n",
@@ -708,11 +709,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         ("explain", [query_arg]) => {
             let query_str = text(query_arg)?;
-            let logical = if query_str.trim().starts_with("tn:")
-                || query_str.trim().starts_with('#')
-                || query_str.trim().starts_with('$')
+            let trimmed = query_str.trim();
+            let logical = if trimmed.starts_with("tn:")
+                || trimmed.starts_with('#')
+                || trimmed.starts_with('$')
             {
                 parse_compact_tem(query_str)?
+            } else if trimmed.to_ascii_lowercase().starts_with("select") {
+                parse_sql(query_str)?
             } else {
                 parse_temql(query_str)?
             };
@@ -721,11 +725,14 @@ fn run() -> Result<(), Box<dyn Error>> {
         }
         ("query", [path, query_arg]) => {
             let query_str = text(query_arg)?;
-            let logical = if query_str.trim().starts_with("tn:")
-                || query_str.trim().starts_with('#')
-                || query_str.trim().starts_with('$')
+            let trimmed = query_str.trim();
+            let logical = if trimmed.starts_with("tn:")
+                || trimmed.starts_with('#')
+                || trimmed.starts_with('$')
             {
                 parse_compact_tem(query_str)?
+            } else if trimmed.to_ascii_lowercase().starts_with("select") {
+                parse_sql(query_str)?
             } else {
                 parse_temql(query_str)?
             };

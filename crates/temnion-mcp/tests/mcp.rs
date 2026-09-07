@@ -139,9 +139,19 @@ fn mcp_tools_and_database_execution() {
     let query_resp_str = server.handle_message(query_req).unwrap();
     assert!(query_resp_str.contains("Query returned 3 rows"));
 
+    // 4b. tools/call: query via SQL
+    let sql_query_req = r#"{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"query","arguments":{"query":"SELECT * FROM temnion WHERE entity = '0:1:1' AND valid_time >= 10 AND valid_time < 13","max_rows":10}}}"#;
+    let sql_query_resp_str = server.handle_message(sql_query_req).unwrap();
+    assert!(sql_query_resp_str.contains("Query returned 3 rows"));
+
+    // 4c. tools/call: explain via SQL
+    let sql_explain_req = r#"{"jsonrpc":"2.0","id":15,"method":"tools/call","params":{"name":"explain","arguments":{"query":"SELECT * FROM temnion WHERE entity = '0:1:1'"}}}"#;
+    let sql_explain_resp_str = server.handle_message(sql_explain_req).unwrap();
+    assert!(sql_explain_resp_str.contains("StorageScan"));
+
     // 5. tools/call: unknown tool
     let bad_req =
-        r#"{"jsonrpc":"2.0","id":14,"method":"tools/call","params":{"name":"non_existent_tool"}}"#;
+        r#"{"jsonrpc":"2.0","id":16,"method":"tools/call","params":{"name":"non_existent_tool"}}"#;
     let bad_resp_str = server.handle_message(bad_req).unwrap();
     assert!(bad_resp_str.contains("-32601"));
 }

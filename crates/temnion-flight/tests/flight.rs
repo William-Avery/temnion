@@ -211,4 +211,19 @@ fn flight_service_get_flight_info_and_do_get_pipeline() {
     let (dec_flight, len) = FlightData::decode(&enc_flight).unwrap();
     assert_eq!(len, enc_flight.len());
     assert_eq!(dec_flight.data_header, batch_data.data_header);
+
+    // 3. do_get via SQL query
+    let sql_ticket = Ticket::new(
+        "SELECT * FROM temnion WHERE entity = '0:1:1' AND valid_time >= 10 AND valid_time < 13",
+        100,
+    );
+    let sql_batches = service.do_get(&hs.session_token, &sql_ticket).unwrap();
+    assert_eq!(sql_batches.len(), 1);
+    let sql_row_count = u32::from_le_bytes([
+        sql_batches[0].data_header[0],
+        sql_batches[0].data_header[1],
+        sql_batches[0].data_header[2],
+        sql_batches[0].data_header[3],
+    ]);
+    assert_eq!(sql_row_count, 3);
 }

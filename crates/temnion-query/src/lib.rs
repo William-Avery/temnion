@@ -942,6 +942,284 @@ pub fn parse_compact_tem(input: &str) -> Result<LogicalPlan, QueryError> {
     })
 }
 
+/// Parses SQL query text into canonical `LogicalPlan` (M22).
+///
+/// Supports relational and temporal SQL queries:
+/// ```sql
+/// SELECT position, health
+/// FROM temnion
+/// WHERE entity = '#0:1:0'
+///   AND valid_time >= 10
+///   AND valid_time < 20
+///   AND known_as_of = 20
+///   AND health > 50
+/// LIMIT 32
+/// ```
+pub fn parse_sql(input: &str) -> Result<LogicalPlan, QueryError> {
+    let raw = input.trim();
+    if raw.is_empty() {
+        return Err(QueryError::ParseError("Empty SQL query input".to_string()));
+    }
+
+    let lower = raw.to_lowercase();
+    if !lower.starts_with("select") {
+        return Err(QueryError::ParseError(
+            "SQL query must start with 'SELECT'".to_string(),
+        ));
+    }
+
+    let from_idx = lower
+        .find(" from ")
+        .or_else(|| lower.find("\nfrom "))
+        .ok_or_else(|| QueryError::ParseError("SQL query missing 'FROM' clause".to_string()))?;
+
+    let select_part = raw[6..from_idx].trim();
+    let after_from = raw[from_idx + 6..].trim();
+
+    let lower_after_from = after_from.to_lowercase();
+    let where_pos = lower_after_from
+        .find(" where ")
+        .or_else(|| lower_after_from.find("\nwhere "));
+    let limit_pos = lower_after_from
+        .find(" limit ")
+        .or_else(|| lower_after_from.find("\nlimit "));
+
+    let (from_table, where_clause, limit_clause) = match (where_pos, limit_pos) {
+        (Some(w_idx), Some(l_idx)) if w_idx < l_idx => {
+            let table = after_from[..w_idx].trim();
+            let wh = after_from[w_idx + 7..l_idx].trim();
+            let lim = after_from[l_idx + 7..].trim();
+            (table, Some(wh), Some(lim))
+        }
+        (Some(w_idx), None) => {
+            let table = after_from[..w_idx].trim();
+            let wh = after_from[w_idx + 7..].trim();
+            (table, Some(wh), None)
+        }
+        (None, Some(l_idx)) => {
+            let table = after_from[..l_idx].trim();
+            let lim = after_from[l_idx + 7..].trim();
+            (table, None, Some(lim))
+        }
+        (None, None) => (after_from.trim(), None, None),
+        _ => {
+            return Err(QueryError::ParseError(
+                "Invalid SQL clause ordering; expected FROM ... WHERE ... LIMIT".to_string(),
+            ));
+        }
+    };
+
+    // 1. Projection
+    let projection = if select_part == "*" {
+        None
+    } else {
+        let fields: Vec<String> = select_part
+            .split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if fields.is_empty() {
+            None
+        } else {
+            Some(fields)
+        }
+    };
+
+    // 2. Entity from table or WHERE
+    let mut entity = parse_entity_id(from_table).ok();
+
+    // 3. Predicates from WHERE
+    let mut valid_start: Option<u64> = None;
+    let mut valid_end: Option<u64> = None;
+    let mut known_as_of = None;
+    let mut filter_exprs: Vec<Expr> = Vec::new();
+
+    if let Some(wh) = where_clause {
+        let predicates = split_sql_and(wh);
+        for pred in predicates {
+            let p_trim = pred.trim();
+            let p_lower = p_trim.to_lowercase();
+
+            if p_lower.starts_with("entity =") || p_lower.starts_with("entity=") {
+                let val_str = p_trim
+                    .split_once('=')
+                    .unwrap()
+                    .1
+                    .trim()
+                    .trim_matches('\'')
+                    .trim_matches('"');
+                entity = Some(parse_entity_id(val_str)?);
+            } else if p_lower.starts_with("valid_time >=") || p_lower.starts_with("valid_time>=") {
+                let val_str = p_trim.split_once(">=").unwrap().1.trim();
+                let tick: u64 = val_str.parse().map_err(|e| {
+                    QueryError::ParseError(format!("Invalid valid_time start: {e}"))
+                })?;
+                valid_start = Some(tick);
+            } else if p_lower.starts_with("valid_time >") || p_lower.starts_with("valid_time>") {
+                let val_str = p_trim.split_once('>').unwrap().1.trim();
+                let tick: u64 = val_str.parse().map_err(|e| {
+                    QueryError::ParseError(format!("Invalid valid_time start: {e}"))
+                })?;
+                valid_start = Some(tick);
+            } else if p_lower.starts_with("valid_time <=") || p_lower.starts_with("valid_time<=") {
+                let val_str = p_trim.split_once("<=").unwrap().1.trim();
+                let tick: u64 = val_str
+                    .parse()
+                    .map_err(|e| QueryError::ParseError(format!("Invalid valid_time end: {e}")))?;
+                valid_end = Some(tick);
+            } else if p_lower.starts_with("valid_time <") || p_lower.starts_with("valid_time<") {
+                let val_str = p_trim.split_once('<').unwrap().1.trim();
+                let tick: u64 = val_str
+                    .parse()
+                    .map_err(|e| QueryError::ParseError(format!("Invalid valid_time end: {e}")))?;
+                valid_end = Some(tick);
+            } else if p_lower.starts_with("known_as_of =") || p_lower.starts_with("known_as_of=") {
+                let val_str = p_trim.split_once('=').unwrap().1.trim();
+                let tick: u64 = val_str
+                    .parse()
+                    .map_err(|e| QueryError::ParseError(format!("Invalid known_as_of: {e}")))?;
+                known_as_of = Some(Timestamp {
+                    clock: ClockId(1),
+                    ticks: tick,
+                });
+            } else if p_lower.starts_with("known_time <=") || p_lower.starts_with("known_time<=") {
+                let val_str = p_trim.split_once("<=").unwrap().1.trim();
+                let tick: u64 = val_str.parse().map_err(|e| {
+                    QueryError::ParseError(format!("Invalid known_time cutoff: {e}"))
+                })?;
+                known_as_of = Some(Timestamp {
+                    clock: ClockId(1),
+                    ticks: tick,
+                });
+            } else {
+                let expr = parse_sql_expr(p_trim)?;
+                filter_exprs.push(expr);
+            }
+        }
+    }
+
+    let valid_range = match (valid_start, valid_end) {
+        (Some(start), Some(end)) => Some(
+            Timestamp {
+                clock: ClockId(1),
+                ticks: start,
+            }..Timestamp {
+                clock: ClockId(1),
+                ticks: end,
+            },
+        ),
+        _ => None,
+    };
+
+    let mut filter = None;
+    for expr in filter_exprs {
+        match filter {
+            None => filter = Some(expr),
+            Some(existing) => {
+                filter = Some(Expr::Binary {
+                    op: BinaryOp::And,
+                    left: Box::new(existing),
+                    right: Box::new(expr),
+                });
+            }
+        }
+    }
+
+    let limit = if let Some(lim_str) = limit_clause {
+        let lim: usize = lim_str
+            .trim()
+            .parse()
+            .map_err(|e| QueryError::ParseError(format!("Invalid SQL LIMIT: {e}")))?;
+        Some(lim)
+    } else {
+        None
+    };
+
+    Ok(LogicalPlan::Scan {
+        entity,
+        schema: None,
+        valid_range,
+        known_as_of,
+        filter,
+        projection,
+        limit,
+    })
+}
+
+fn split_sql_and(s: &str) -> Vec<String> {
+    let mut results = Vec::new();
+    let mut current = String::new();
+    let mut in_quote = false;
+
+    let chars: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < chars.len() {
+        let c = chars[i];
+        if c == '\'' || c == '"' {
+            in_quote = !in_quote;
+            current.push(c);
+            i += 1;
+        } else if !in_quote
+            && (i + 4 <= chars.len())
+            && chars[i..i + 4]
+                .iter()
+                .collect::<String>()
+                .eq_ignore_ascii_case("and ")
+            && (i == 0 || chars[i - 1].is_whitespace())
+        {
+            results.push(current.trim().to_string());
+            current.clear();
+            i += 4;
+        } else {
+            current.push(c);
+            i += 1;
+        }
+    }
+    if !current.trim().is_empty() {
+        results.push(current.trim().to_string());
+    }
+    results
+}
+
+fn parse_sql_expr(s: &str) -> Result<Expr, QueryError> {
+    let ops = [
+        ("<>", BinaryOp::NotEq),
+        ("!=", BinaryOp::NotEq),
+        ("<=", BinaryOp::Lte),
+        (">=", BinaryOp::Gte),
+        ("==", BinaryOp::Eq),
+        ("=", BinaryOp::Eq),
+        ("<", BinaryOp::Lt),
+        (">", BinaryOp::Gt),
+    ];
+
+    for (op_str, op) in ops {
+        if let Some((left, right)) = s.split_once(op_str) {
+            let left_field = left.trim().to_string();
+            let right_val = right.trim().trim_matches('\'').trim_matches('"');
+            let literal = if let Ok(i) = right_val.parse::<i64>() {
+                Literal::Int(i)
+            } else if let Ok(f) = right_val.parse::<f64>() {
+                Literal::Float(f)
+            } else if right_val.eq_ignore_ascii_case("true") {
+                Literal::Bool(true)
+            } else if right_val.eq_ignore_ascii_case("false") {
+                Literal::Bool(false)
+            } else {
+                Literal::String(right_val.to_string())
+            };
+
+            return Ok(Expr::Binary {
+                op,
+                left: Box::new(Expr::Field(left_field)),
+                right: Box::new(Expr::Literal(literal)),
+            });
+        }
+    }
+
+    Ok(Expr::Field(s.trim().to_string()))
+}
+
 fn parse_entity_id(s: &str) -> Result<EntityId, QueryError> {
     let clean = s.strip_prefix('#').unwrap_or(s).trim();
     let parts: Vec<&str> = clean.split(':').collect();

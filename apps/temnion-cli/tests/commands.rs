@@ -35,6 +35,7 @@ fn capabilities_do_not_advertise_unimplemented_features() {
         assert!(text.contains(&format!("\"{capability}\": false")));
     }
     assert!(text.contains("\"temql\": true"));
+    assert!(text.contains("\"sql\": true"));
     assert!(text.contains("\"tnp\": true"));
     assert!(text.contains("\"mcp\": true"));
     assert!(text.contains("\"durable\": true"));
@@ -49,6 +50,7 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"storage-hierarchy\""));
     assert!(text.contains("\"query-ir\""));
     assert!(text.contains("\"compact-tem\""));
+    assert!(text.contains("\"sql\""));
     assert!(text.contains("\"tnp\""));
     assert!(text.contains("\"local-ipc\""));
     assert!(text.contains("\"arrow-columnar\""));
@@ -413,6 +415,15 @@ fn explain_and_query_cli_roundtrip() {
     let compact_text = String::from_utf8(compact_explain.stdout).unwrap();
     assert_eq!(explain_text, compact_text);
 
+    // Test explain on SQL
+    let sql_explain = tem(&[
+        "explain",
+        "SELECT * FROM temnion WHERE entity = '0:1:0' AND valid_time >= 10 AND valid_time < 50 LIMIT 5",
+    ]);
+    assert!(sql_explain.status.success());
+    let sql_text = String::from_utf8(sql_explain.stdout).unwrap();
+    assert_eq!(explain_text, sql_text);
+
     // Initialize database and append test events
     assert!(directory.command("init", &[]).status.success());
     assert!(
@@ -447,4 +458,14 @@ fn explain_and_query_cli_roundtrip() {
     assert!(query_text.contains("entity=0:1:0 valid=15"));
     assert!(query_text.contains("entity=0:1:0 valid=25"));
     assert!(!query_text.contains("entity=0:2:0"));
+
+    // Query entity 0:1:0 using SQL syntax
+    let sql_query_res = tem(&[
+        "query",
+        dir_str,
+        "SELECT * FROM temnion WHERE entity = '0:1:0' AND valid_time >= 10 AND valid_time < 30 LIMIT 10",
+    ]);
+    assert!(sql_query_res.status.success());
+    let sql_query_text = String::from_utf8(sql_query_res.stdout).unwrap();
+    assert_eq!(query_text, sql_query_text);
 }

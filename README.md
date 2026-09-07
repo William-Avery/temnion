@@ -57,7 +57,7 @@ Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
 **Still unfinished:** manifest-based WAL retirement,
-standalone `temniond` daemon, SQL, Studio, EKS, transformations,
+standalone `temniond` daemon, Studio, EKS, transformations,
 evolution, and Tzeentch integration.
 
 ## Quick start

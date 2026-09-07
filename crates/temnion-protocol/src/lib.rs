@@ -25,7 +25,7 @@ use temnion_core::{ClockId, EntityId, SchemaId, ShardId, Timestamp};
 use temnion_format::Limits;
 use temnion_query::{
     QueryBudget as EngineQueryBudget, QueryExecutor, QueryResult, QueryRow, parse_compact_tem,
-    parse_temql, plan_query,
+    parse_sql, parse_temql, plan_query,
 };
 use temnion_storage::{RecoveryMode, Store};
 
@@ -346,6 +346,7 @@ impl HandshakeResponse {
 pub enum QueryFormat {
     Temql = 1,
     CompactTem = 2,
+    Sql = 3,
 }
 
 /// Query request payload.
@@ -375,6 +376,7 @@ impl QueryRequest {
         let format = match bytes[0] {
             1 => QueryFormat::Temql,
             2 => QueryFormat::CompactTem,
+            3 => QueryFormat::Sql,
             _ => {
                 return Err(TnpError::ProtocolViolation(
                     "Unknown query format".to_string(),
@@ -545,7 +547,7 @@ impl TnpServer {
                 }
                 TnpMessageType::DescribeRequest => {
                     let desc = format!(
-                        "{{\"server_id\":\"{}\",\"version\":{},\"capabilities\":[\"tnp\",\"query-ir\",\"temql\",\"compact-tem\",\"arrow-columnar\"]}}",
+                        "{{\"server_id\":\"{}\",\"version\":{},\"capabilities\":[\"tnp\",\"query-ir\",\"temql\",\"compact-tem\",\"sql\",\"arrow-columnar\"]}}",
                         self.server_id, TNP_VERSION
                     );
                     channel.send(&TnpPacket::new(
@@ -560,6 +562,8 @@ impl TnpServer {
                         QueryFormat::Temql => parse_temql(&q_req.query_str)
                             .map_err(|e| TnpError::ExecutionError(e.to_string()))?,
                         QueryFormat::CompactTem => parse_compact_tem(&q_req.query_str)
+                            .map_err(|e| TnpError::ExecutionError(e.to_string()))?,
+                        QueryFormat::Sql => parse_sql(&q_req.query_str)
                             .map_err(|e| TnpError::ExecutionError(e.to_string()))?,
                     };
 
@@ -817,11 +821,14 @@ pub fn temnion_c_query_execute(
             None => return Err(TEMNION_ERR_NOT_FOUND),
         };
 
-        let logical = match if query_str.trim().starts_with("tn:")
-            || query_str.trim().starts_with('#')
-            || query_str.trim().starts_with('$')
+        let trimmed = query_str.trim();
+        let logical = match if trimmed.starts_with("tn:")
+            || trimmed.starts_with('#')
+            || trimmed.starts_with('$')
         {
             parse_compact_tem(query_str)
+        } else if trimmed.to_ascii_lowercase().starts_with("select") {
+            parse_sql(query_str)
         } else {
             parse_temql(query_str)
         } {

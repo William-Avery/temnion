@@ -202,6 +202,16 @@ fn handshake_and_query_codecs() {
     let c_enc = c_req.encode();
     let c_dec = QueryRequest::decode(&c_enc).unwrap();
     assert_eq!(c_req, c_dec);
+
+    // QueryRequest - SQL
+    let s_req = QueryRequest {
+        format: QueryFormat::Sql,
+        query_str: "SELECT * FROM temnion WHERE entity = '#0:1:1' AND valid_time >= 10 AND valid_time < 20 LIMIT 100".to_string(),
+        max_rows: 100,
+    };
+    let s_enc = s_req.encode();
+    let s_dec = QueryRequest::decode(&s_enc).unwrap();
+    assert_eq!(s_req, s_dec);
 }
 
 #[test]
@@ -427,9 +437,21 @@ fn c_abi_store_and_query_flow() {
     let row_compact_count = temnion_c_result_row_count(res_compact_handle);
     assert_eq!(row_compact_count, 1);
 
+    // Execute query via SQL syntax
+    let mut res_sql_handle = 0u64;
+    let qs_status = temnion_c_query_execute(
+        store_handle,
+        "SELECT * FROM temnion WHERE entity = '#0:1:1' AND valid_time >= 5 AND valid_time < 25",
+        &mut res_sql_handle,
+    );
+    assert_eq!(qs_status, TEMNION_SUCCESS);
+    let row_sql_count = temnion_c_result_row_count(res_sql_handle);
+    assert_eq!(row_sql_count, 2);
+
     // Free results
     assert_eq!(temnion_c_result_free(res_handle), TEMNION_SUCCESS);
     assert_eq!(temnion_c_result_free(res_compact_handle), TEMNION_SUCCESS);
+    assert_eq!(temnion_c_result_free(res_sql_handle), TEMNION_SUCCESS);
 
     // Error handling checks
     let mut err_handle = 0u64;
