@@ -8,7 +8,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, and storage hierarchy.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, and compact Tem.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
 > and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
@@ -20,6 +20,8 @@ first consumer, not a dependency of the database core.
 > Bloom filters, Morton 2D/3D space-filling curves, and zero-payload-duplication
 > alternate projections. `temnion-runtime` provides single-writer virtual-shard
 > partitioning, priority background task DAG scheduling, and tiered storage management.
+> `temnion-query` provides canonical typed query IR, physical planning, EXPLAIN,
+> and equivalent human TemQL and AI-compact `tn:` parsers.
 
 ## What works now
 
@@ -37,7 +39,8 @@ first consumer, not a dependency of the database core.
 | `temnion-branch` | Structurally shared timeline branching, zero-payload-duplication forks, atomic manifest updates (TNBM), lifecycle states, and interval timeline resolution |
 | `temnion-causal` | First-class causal graph (TNCG), CSR-packed flat indexing, bidirectional immediate queries, transitive causal/effect cone tracing, topological sort, and cycle detection |
 | `temnion-runtime` | Single-writer virtual shards, routing policies, deterministic total-order merge, priority-weighted background task DAG with Kahn cycle prevention and pressure throttling, and three-tier storage hierarchy with LRU eviction and auto-promotion |
-| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, and `causal-trace` commands |
+| `temnion-query` | Canonical typed query IR (LogicalPlan, Expr), physical planning with predicate pushdown (PhysicalPlan), EXPLAIN formatting, reference executor with resource budgets, and equivalent human TemQL and AI-compact tn: shorthand parsers |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, and `explain` commands |
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
@@ -46,7 +49,7 @@ Startup scans the authoritative WAL.
 Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**Still unfinished:** manifest-based WAL retirement, typed query IR, TemQL/Tem parsers,
+**Still unfinished:** manifest-based WAL retirement,
 `temniond`, TNP, IPC/C/Arrow/Flight, SQL, MCP, Studio, EKS, transformations,
 evolution, and Tzeentch integration.
 

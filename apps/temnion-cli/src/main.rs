@@ -14,6 +14,10 @@ use temnion_core::{
 };
 use temnion_events::{EventInput, EventLog, HistoryFilter, QueryBudget};
 use temnion_format::{Limits, StoredEvent, decode_segment};
+use temnion_query::{
+    QueryBudget as EngineQueryBudget, QueryExecutor, explain_query, parse_compact_tem, parse_temql,
+    plan_query,
+};
 use temnion_replay::{
     Checkpoint, RawEntityReducer, ReplayEngine, decode_raw_entity_map, encode_raw_entity_map,
 };
@@ -38,6 +42,8 @@ Usage: tem [help | version | describe | demo]
        tem branch-create <directory> <name> [parent-id] [fork-seq]
        tem branch-list <directory>
        tem causal-trace <directory> <sequence> [max-depth]
+       tem query <directory> <query-str>
+       tem explain <query-str>
 
   help       Show this help
   version    Show the version
@@ -57,9 +63,11 @@ Usage: tem [help | version | describe | demo]
   branch-create   Fork a new timeline sharing all ancestor segments (O(1) fork)
   branch-list     List all timeline branches and lifecycle states in database
   causal-trace    Trace transitive causal ancestry and effect cones for an event
+  query           Execute a TemQL or compact tn: query against a database
+  explain         Parse a TemQL or compact tn: query and show the physical execution plan
 
 The append command is a low-level schema-ID/opaque-payload interface.
-Ordinary open never silently truncates history. temniond, TemQL, TNP,
+Ordinary open never silently truncates history. temniond, TNP,
 MCP, and Temnion Studio are not implemented yet.";
 
 const CAPABILITIES: &str = concat!(
@@ -77,10 +85,11 @@ const CAPABILITIES: &str = concat!(
     "\"deterministic-reconstruction\", \"lossless-codecs\", ",
     "\"branching-timelines\", \"causal-graph\", \"hierarchical-summaries\", ",
     "\"nd-layouts\", \"alternate-projections\", \"virtual-shards\", ",
-    "\"background-dag\", \"storage-hierarchy\"],\n",
+    "\"background-dag\", \"storage-hierarchy\", \"query-ir\", \"temql\", ",
+    "\"compact-tem\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
-    "  \"temql\": false,\n",
+    "  \"temql\": true,\n",
     "  \"tnp\": false,\n",
     "  \"tsf\": true,\n",
     "  \"mcp\": false,\n",
@@ -691,6 +700,62 @@ fn run() -> Result<(), Box<dyn Error>> {
                         d, e.source.0, e.epoch.0, e.sequence
                     )?;
                 }
+            }
+        }
+        ("explain", [query_arg]) => {
+            let query_str = text(query_arg)?;
+            let logical = if query_str.trim().starts_with("tn:")
+                || query_str.trim().starts_with('#')
+                || query_str.trim().starts_with('$')
+            {
+                parse_compact_tem(query_str)?
+            } else {
+                parse_temql(query_str)?
+            };
+            let explain = explain_query(&logical);
+            write!(out, "{explain}")?;
+        }
+        ("query", [path, query_arg]) => {
+            let query_str = text(query_arg)?;
+            let logical = if query_str.trim().starts_with("tn:")
+                || query_str.trim().starts_with('#')
+                || query_str.trim().starts_with('$')
+            {
+                parse_compact_tem(query_str)?
+            } else {
+                parse_temql(query_str)?
+            };
+            let physical = plan_query(&logical);
+            let mut store = open_store(path)?;
+            let result = QueryExecutor::execute_storage_scan(
+                &mut store,
+                &physical,
+                &EngineQueryBudget::default(),
+            )?;
+
+            writeln!(
+                out,
+                "Query results (rows={}, scanned={}, bytes_read={}, truncated={}):",
+                result.rows.len(),
+                result.events_scanned,
+                result.bytes_read,
+                result.truncated
+            )?;
+            for row in &result.rows {
+                let mut field_pairs: Vec<String> =
+                    row.fields.iter().map(|(k, v)| format!("{k}={v}")).collect();
+                field_pairs.sort();
+                writeln!(
+                    out,
+                    "  [seq={}] entity={}:{}:{} valid={} known={} fields={{{}}}",
+                    row.sequence,
+                    row.entity.shard.0,
+                    row.entity.slot,
+                    row.entity.generation,
+                    row.valid_time.ticks,
+                    row.known_time.ticks,
+                    field_pairs.join(", ")
+                )?;
             }
         }
         _ => {

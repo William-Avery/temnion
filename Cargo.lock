@@ -87,6 +87,7 @@ dependencies = [
  "temnion-events",
  "temnion-format",
  "temnion-index",
+ "temnion-query",
  "temnion-replay",
  "temnion-runtime",
  "temnion-schema",
@@ -129,6 +130,19 @@ dependencies = [
  "temnion-core",
  "temnion-events",
  "temnion-format",
+]
+
+[[package]]
+name = "temnion-query"
+version = "0.1.0"
+dependencies = [
+ "temnion-causal",
+ "temnion-core",
+ "temnion-events",
+ "temnion-format",
+ "temnion-index",
+ "temnion-schema",
+ "temnion-storage",
 ]
 
 [[package]]

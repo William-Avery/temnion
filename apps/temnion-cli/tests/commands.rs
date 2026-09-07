@@ -31,9 +31,10 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     let result = tem(&["describe"]);
     assert!(result.status.success());
     let text = String::from_utf8(result.stdout).unwrap();
-    for capability in ["server", "temql", "tnp", "mcp", "studio"] {
+    for capability in ["server", "tnp", "mcp", "studio"] {
         assert!(text.contains(&format!("\"{capability}\": false")));
     }
+    assert!(text.contains("\"temql\": true"));
     assert!(text.contains("\"durable\": true"));
     assert!(text.contains("\"tsf\": true"));
     assert!(text.contains("\"storage\": \"volatile-memory-and-os-synced-source-log\""));
@@ -44,6 +45,8 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"virtual-shards\""));
     assert!(text.contains("\"background-dag\""));
     assert!(text.contains("\"storage-hierarchy\""));
+    assert!(text.contains("\"query-ir\""));
+    assert!(text.contains("\"compact-tem\""));
 }
 
 #[test]
@@ -374,4 +377,66 @@ fn causal_trace_cli_roundtrip() {
     assert!(trace2_text.contains("depth=1 event=1:1:1"));
     assert!(trace2_text.contains("depth=2 event=1:1:0"));
     assert!(trace2_text.contains("Downstream Effects (total=0):"));
+}
+
+#[test]
+fn explain_and_query_cli_roundtrip() {
+    let directory = DatabaseDirectory::new();
+
+    // Test explain on TemQL
+    let temql_explain = tem(&[
+        "explain",
+        "FROM temnion\nENTITY 0:1:0\nTIME valid 10..50\nLIMIT 5",
+    ]);
+    assert!(
+        temql_explain.status.success(),
+        "{}",
+        String::from_utf8_lossy(&temql_explain.stderr)
+    );
+    let explain_text = String::from_utf8(temql_explain.stdout).unwrap();
+    assert!(explain_text.contains("StorageScan"));
+    assert!(explain_text.contains("entity=0:1:0"));
+    assert!(explain_text.contains("valid_range=10..50"));
+    assert!(explain_text.contains("limit=5"));
+
+    // Test explain on compact tn:
+    let compact_explain = tem(&["explain", "tn:#0:1:0@v10..50!5"]);
+    assert!(compact_explain.status.success());
+    let compact_text = String::from_utf8(compact_explain.stdout).unwrap();
+    assert_eq!(explain_text, compact_text);
+
+    // Initialize database and append test events
+    assert!(directory.command("init", &[]).status.success());
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:15", "2:15", "aaaa"])
+            .status
+            .success()
+    );
+    assert!(
+        directory
+            .command("append", &["0:1:0", "1", "1:25", "2:25", "bbbb"])
+            .status
+            .success()
+    );
+    assert!(
+        directory
+            .command("append", &["0:2:0", "1", "1:35", "2:35", "cccc"])
+            .status
+            .success()
+    );
+
+    // Query entity 0:1:0 using compact syntax
+    let dir_str = directory.0.to_str().unwrap();
+    let query_res = tem(&["query", dir_str, "tn:#0:1:0@v10..30!10"]);
+    assert!(
+        query_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&query_res.stderr)
+    );
+    let query_text = String::from_utf8(query_res.stdout).unwrap();
+    assert!(query_text.contains("Query results (rows=2"));
+    assert!(query_text.contains("entity=0:1:0 valid=15"));
+    assert!(query_text.contains("entity=0:1:0 valid=25"));
+    assert!(!query_text.contains("entity=0:2:0"));
 }
