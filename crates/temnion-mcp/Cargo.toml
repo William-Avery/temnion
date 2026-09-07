@@ -16,8 +16,9 @@ temnion-branch.workspace = true
 temnion-causal.workspace = true
 temnion-query.workspace = true
 temnion-protocol.workspace = true
-temnion-eks.workspace = true
-temnion-transform.workspace = true
+temnion-eks = { workspace = true }
+temnion-transform = { workspace = true }
+temnion-evolution = { workspace = true }
 
 [lints]
 workspace = true

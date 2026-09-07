@@ -161,9 +161,29 @@ fn mcp_tools_and_database_execution() {
     assert!(rewrite_resp_str.contains("E-Graph Equality Saturation Complete"));
     assert!(rewrite_resp_str.contains("Optimized Expression: status"));
 
+    // 4f. tools/call: evolution_status
+    let evo_status_req = r#"{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"evolution_status","arguments":{}}}"#;
+    let evo_status_resp = server.handle_message(evo_status_req).unwrap();
+    assert!(evo_status_resp.contains("Champion/Challenger Evolution Engine Status"));
+    assert!(evo_status_resp.contains("Active Incumbents: 1"));
+
+    // 4g. tools/call: candidate_evaluate
+    let eval_req = r#"{"jsonrpc":"2.0","id":19,"method":"tools/call","params":{"name":"candidate_evaluate","arguments":{"domain":"segment_compression"}}}"#;
+    let eval_resp = server.handle_message(eval_req).unwrap();
+    assert!(eval_resp.contains("Candidate Evaluation Complete"));
+    assert!(eval_resp.contains("Net Benefit Score"));
+    assert!(eval_resp.contains("Promotable: true"));
+
+    // 4h. tools/call: constitution_audit
+    let audit_req = r#"{"jsonrpc":"2.0","id":20,"method":"tools/call","params":{"name":"constitution_audit","arguments":{}}}"#;
+    let audit_resp = server.handle_message(audit_req).unwrap();
+    assert!(audit_resp.contains("Constitution Audit Report"));
+    assert!(audit_resp.contains("Conformance: CERTIFIED"));
+    assert!(audit_resp.contains("Axioms Certified: 8/8"));
+
     // 5. tools/call: unknown tool
     let bad_req =
-        r#"{"jsonrpc":"2.0","id":18,"method":"tools/call","params":{"name":"non_existent_tool"}}"#;
+        r#"{"jsonrpc":"2.0","id":21,"method":"tools/call","params":{"name":"non_existent_tool"}}"#;
     let bad_resp_str = server.handle_message(bad_req).unwrap();
     assert!(bad_resp_str.contains("-32601"));
 }

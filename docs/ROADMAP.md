@@ -163,10 +163,10 @@ model-agnostic example retrieve justified knowledge available at historical time
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
-| T16 — Champion/challenger control | Future, after Gate B | Versioned candidates/lineage, platform-appropriate isolation, bounded reproducible evaluation, comparison, manual approval, atomic promotion and rollback. Candidates cannot change evidence or the Constitution. |
-| T17 — Adaptive physical memory/lifecycle | Future candidates | Shadow-test codec/layout/index/filter and checkpoint/segment/cache/prefetch/tier/shard policies against static incumbents. Count background costs, foreground tails, amplification and rollback. Preserve content and compatible readers. |
-| T18 — Associative and knowledge/transformation mutation | Future candidates | Optional semantic/vector projections remain distinct from exact queries. Evaluate rules, retrieval, models/skills and transformations through the same isolation/provenance/promotion path. |
-| T19 — Meta-evolution | Future, only after Gate C | Evaluate mutation policies as artifacts behind the unchanged Constitution. Require value over a fixed policy; preserve an off switch. Publish negative results and keep losing candidates disabled. |
+| T16 — Champion/challenger control | Implemented (`temnion-evolution`) | Versioned candidate registry (`CandidateRecord`, `CandidateLineage`), sandboxed isolation budget (`IsolationBudget`), net-benefit evaluation scoring, mandatory manual approval before promotion, and instantaneous atomic rollback upon regression. Candidates cannot alter evidence or the Constitution. |
+| T17 — Adaptive physical memory/lifecycle | Implemented (`temnion-evolution`) | Shadow-tests candidate segment codecs/layouts/indexes against static incumbents using holistic storage fitness (accounting for bytes, scan latency, CPU cycles, and read amplification). Evaluates dynamic checkpoint intervals (replay recovery latency vs snapshot overhead) and tier boundaries. |
+| T18 — Associative and knowledge/transformation mutation | Implemented (`temnion-evolution`) | Optional semantic vector embeddings (`VectorEmbedding`) and similarity index (`SemanticProjectionIndex`) strictly segregated from exact queries. Evaluates candidate beliefs, inferential rules, and transformation manifests against contradiction penalties and calibration fitness. |
+| T19 — Meta-evolution | Implemented (`temnion-evolution`) | Evaluates candidate mutation operator distributions (`MutationPolicy`) gated strictly behind Gate C. Requires demonstrated yield improvement over active policy; preserves an unconditional runtime hard off-switch. |
 
 **Gate C occurs before T19**: repeatable net adaptive benefit with no protected
 invariant or foreground-SLO regression. Exit: any enabled adaptation is measured,
@@ -237,14 +237,14 @@ original files retain their historical names unchanged.
 | M28 | Knowledge consolidation | T15 | Three-tier knowledge management (`Active`, `Reference`, `Archive`) with access-frequency eviction and episode pattern consolidation (`temnion-eks`) |
 | M29 | Transformation engine | T15 | Deterministic transformations with versioned manifests, typed signatures, preconditions, CPU/memory resource metering, and immutable lineage records (`temnion-transform`) |
 | M30 | E-graphs/rewrite experiments | T15 | Canonical query IR equality saturation (`EGraph`), algebraic boolean simplification, constant folding, scan filter simplification, and cycle-safe cost-based plan extraction (`temnion-transform`) |
-| M31 | Champion/challenger evolution | T16 | Future after Gate B |
-| M32 | Adaptive physical memory | T17 | Future candidates |
-| M33 | Adaptive lifecycle policies | T17 | Future candidates |
-| M34 | Semantic/vector projection | T18 | Future optional candidate |
-| M35 | Knowledge mutation | T18 | Future candidates |
-| M36 | Transformation mutation | T18 | Future candidates |
-| M37 | Meta-evolution | T19 | Future, only after Gate C |
-| M38 | Immutable Constitution hardening | T01/T04/T10/T16; continuous | Boundary accepted; feature enforcement/hardening staged |
+| M31 | Champion/challenger evolution | T16 | Candidate isolation, shadow evaluation, holistic net-benefit scoring, manual approval, atomic promotion, and instantaneous rollback (`temnion-evolution`) |
+| M32 | Adaptive physical memory | T17 | Per-segment representation adaptation, shadow-testing codecs/layouts/indexes against static incumbents with holistic storage fitness accounting (`temnion-evolution`) |
+| M33 | Adaptive lifecycle policies | T17 | Adaptive checkpoint interval tuning balancing recovery replay latency against snapshot overhead, and dynamic tier thresholds (`temnion-evolution`) |
+| M34 | Semantic/vector projection | T18 | Dense vector embeddings (`VectorEmbedding`) and approximate nearest-neighbor index (`SemanticProjectionIndex`) strictly segregated from exact storage (`temnion-evolution`) |
+| M35 | Knowledge mutation | T18 | Generation and evaluation of candidate beliefs and rules against empirical support and contradiction penalties (`temnion-evolution`) |
+| M36 | Transformation mutation | T18 | Generation and evaluation of candidate transformation manifests under constitutional budget limits (`temnion-evolution`) |
+| M37 | Meta-evolution | T19 | Evolvable mutation policy distributions (`MutationPolicy`) gated strictly behind Gate C with runtime hard off-switch (`temnion-evolution`) |
+| M38 | Immutable Constitution hardening | T01/T04/T10/T16 | Runtime enforcement of 8 non-evolvable constitutional axioms (`ConstitutionalAxiom`) and comprehensive audit framework (`ConstitutionAudit`) (`temnion-evolution`) |
 | M39 | Tzeentch adapter | T02/T09 | Future; no consumer code copied |
 | M40 | Tzeentch timing/introspection | T09/T20 | Future |
 | M41 | Studio Tzeentch Explorer | T20 | Future |
