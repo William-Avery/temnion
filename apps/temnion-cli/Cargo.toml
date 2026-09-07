@@ -31,6 +31,7 @@ temnion-mcp.workspace = true
 temnion-eks.workspace = true
 temnion-transform.workspace = true
 temnion-evolution.workspace = true
+temnion-adapter.workspace = true
 
 [lints]
 workspace = true

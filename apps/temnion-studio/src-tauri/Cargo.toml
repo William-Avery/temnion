@@ -22,6 +22,8 @@ temnion-storage = { path = "../../../crates/temnion-storage" }
 temnion-query = { path = "../../../crates/temnion-query" }
 temnion-branch = { path = "../../../crates/temnion-branch" }
 temnion-causal = { path = "../../../crates/temnion-causal" }
+temnion-eks = { path = "../../../crates/temnion-eks" }
+temnion-adapter = { path = "../../../crates/temnion-adapter" }
 
 [build-dependencies]
 tauri-build = "=2.6.3"

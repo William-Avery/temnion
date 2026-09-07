@@ -60,6 +60,10 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"evolution\": true"));
     assert!(text.contains("\"constitution\": true"));
     assert!(text.contains("\"semantic_projections\": true"));
+    assert!(text.contains("\"tzeentch_adapter\": true"));
+    assert!(text.contains("\"causal_action_trace\": true"));
+    assert!(text.contains("\"scale_qualified\": true"));
+    assert!(text.contains("\"retention_holds\": true"));
 }
 
 #[test]
@@ -537,4 +541,63 @@ fn evolve_cli_commands() {
     assert!(demo_text.contains("Challenger Proposed: ID=2"));
     assert!(demo_text.contains("Net Benefit Score:"));
     assert!(demo_text.contains("Manual Promotion: Promoted by 'lead_architect'"));
+}
+
+#[test]
+fn tzeentch_cli_commands() {
+    // 1. tem tzeentch status
+    let status_res = tem(&["tzeentch", "status"]);
+    assert!(
+        status_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status_res.stderr)
+    );
+    let status_text = String::from_utf8(status_res.stdout).unwrap();
+    assert!(status_text.contains("Temnion Tzeentch Adapter Status:"));
+    assert!(status_text.contains("LegacyOnly"));
+    assert!(status_text.contains("ShadowMirror"));
+    assert!(status_text.contains("TemnionAuthoritative"));
+    assert!(status_text.contains("TemnionOnly"));
+    assert!(status_text.contains("Fast (120 Hz)"));
+    assert!(status_text.contains("Slow (1 Hz)"));
+
+    // 2. tem tzeentch demo
+    let demo_res = tem(&["tzeentch", "demo"]);
+    assert!(
+        demo_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&demo_res.stderr)
+    );
+    let demo_text = String::from_utf8(demo_res.stdout).unwrap();
+    assert!(demo_text.contains("Temnion Tzeentch Multi-Cadence Causal Action Trace Demo:"));
+    assert!(demo_text.contains("Action ID: 401"));
+    assert!(demo_text.contains("Future Leakage Detected: false"));
+    assert!(demo_text.contains("Perception"));
+    assert!(demo_text.contains("Action"));
+    assert!(demo_text.contains("Outcome"));
+
+    // 3. tem tzeentch trace test_organism
+    let trace_res = tem(&["tzeentch", "trace", "test_organism"]);
+    assert!(
+        trace_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&trace_res.stderr)
+    );
+    let trace_text = String::from_utf8(trace_res.stdout).unwrap();
+    assert!(trace_text.contains("Causal Action Trace for Entity 'test_organism':"));
+    assert!(trace_text.contains("Future Leakage Detected: false"));
+}
+
+#[test]
+fn benchmark_scale_cli_command() {
+    let result = tem(&["benchmark", "scale", "500"]);
+    assert!(
+        result.status.success(),
+        "{}",
+        String::from_utf8_lossy(&result.stderr)
+    );
+    let text = String::from_utf8(result.stdout).unwrap();
+    assert!(text.contains("Temnion Scale Benchmark:"));
+    assert!(text.contains("Target Records:       500"));
+    assert!(text.contains("Ingestion Throughput:"));
 }

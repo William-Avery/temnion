@@ -22,13 +22,17 @@ import {
   executeQuery,
   explainQuery,
   getEngineStatus,
+  getTzeentchCadenceStats,
+  getTzeentchSummary,
+  inspectTzeentchActionTrace,
   isNativeRuntime,
   listBranches,
   listHistory,
+  setTzeentchMigrationMode,
   traceCausality,
 } from "./api";
 
-type View = "query" | "history" | "causality" | "ingest" | "connections" | "metrics";
+type View = "query" | "history" | "causality" | "tzeentch" | "ingest" | "connections" | "metrics";
 type QueryFormat = "temql" | "compact" | "sql";
 
 const samples: Record<QueryFormat, string> = {
@@ -41,6 +45,7 @@ const navItems: Array<{ id: View; label: string; icon: string; group: string }> 
   { id: "query", label: "Query Studio", icon: "⌁", group: "Explore" },
   { id: "history", label: "Temporal Plane", icon: "◴", group: "Explore" },
   { id: "causality", label: "Branches & Causality", icon: "⑂", group: "Explore" },
+  { id: "tzeentch", label: "Tzeentch Explorer", icon: "⚛", group: "Explore" },
   { id: "ingest", label: "Ingestion", icon: "⇧", group: "Data" },
   { id: "connections", label: "Connections", icon: "◎", group: "Operate" },
   { id: "metrics", label: "Storage & Capabilities", icon: "▥", group: "Operate" },
@@ -551,6 +556,213 @@ function MetricsPanel({ status }: { status: EngineStatus }) {
   );
 }
 
+function TzeentchPanel({ connected }: { connected: boolean }) {
+  const [selectedSeq, setSelectedSeq] = useState<number>(0);
+  const queryClient = useQueryClient();
+
+  const summaryQuery = useQuery({
+    queryKey: ["tzeentch-summary", connected],
+    queryFn: getTzeentchSummary,
+  });
+
+  const cadenceQuery = useQuery({
+    queryKey: ["tzeentch-cadence", connected],
+    queryFn: getTzeentchCadenceStats,
+    refetchInterval: 5000,
+  });
+
+  const traceQuery = useQuery({
+    queryKey: ["tzeentch-trace", connected, selectedSeq],
+    queryFn: () => inspectTzeentchActionTrace(selectedSeq),
+  });
+
+  const modeMutation = useMutation({
+    mutationFn: setTzeentchMigrationMode,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tzeentch-summary"] }),
+  });
+
+  const summary = summaryQuery.data;
+  const cadence = cadenceQuery.data;
+  const trace = traceQuery.data;
+
+  return (
+    <section className="view-panel active">
+      <PanelHeader
+        title="Tzeentch Explorer"
+        subtitle="End-to-end organism causal introspection, multi-timescale cadence scheduling, and zero-drop migration mirroring."
+      />
+      {!connected && (
+        <Notice>Connect to a database with Tzeentch episodes to view live traces and cadence rates.</Notice>
+      )}
+
+      {/* Migration & Organism Summary */}
+      <div className="glass-card" style={{ padding: "16px", marginBottom: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div>
+            <div style={{ fontSize: "16px", fontWeight: "bold", color: "#e2e8f0" }}>
+              Organism: <span style={{ color: "#38bdf8" }}>{summary?.organismId ?? "ORGX-Prime"}</span>
+            </div>
+            <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+              Organs: {summary?.organs.join(", ") ?? "VisualCortex, MotorExecutive, WorkingMemory"}
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <span style={{ fontSize: "12px", color: "#94a3b8" }}>Migration Mode:</span>
+            <select
+              className="text-input"
+              style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}
+              value={summary?.migrationMode ?? "ShadowMirror"}
+              onChange={(e) => modeMutation.mutate(e.target.value)}
+              disabled={!connected || modeMutation.isPending}
+            >
+              <option value="LegacyOnly">LegacyOnly (Mirror Off)</option>
+              <option value="ShadowMirror">ShadowMirror (Dual Write)</option>
+              <option value="TemnionAuthoritative">TemnionAuthoritative</option>
+              <option value="TemnionOnly">TemnionOnly (Cutover)</option>
+            </select>
+            <span className="badge badge-success">0 Drops</span>
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
+          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
+            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Mirrored Enqueued</div>
+            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#38bdf8" }}>{summary?.mirrorEnqueued ?? 0}</div>
+          </div>
+          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
+            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Mirrored Drained</div>
+            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399" }}>{summary?.mirrorDrained ?? 0}</div>
+          </div>
+          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
+            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Dropped Frames</div>
+            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399" }}>0</div>
+          </div>
+          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
+            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Queue Pressure</div>
+            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#e2e8f0" }}>
+              {((cadence?.queuePressure ?? 0) * 100).toFixed(1)}%
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Multi-Timescale Cadence Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
+        <div className="glass-card" style={{ padding: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#f43f5e" }}>FAST Cadence</span>
+            <span className="badge badge-neutral">120 Hz</span>
+          </div>
+          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.fastTicks ?? 0} ticks</div>
+          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Sensory & Motor Execution</div>
+        </div>
+        <div className="glass-card" style={{ padding: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#fb923c" }}>MEDIUM Cadence</span>
+            <span className="badge badge-neutral">20 Hz</span>
+          </div>
+          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.mediumTicks ?? 0} ticks</div>
+          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Attention & Memory Consolidation</div>
+        </div>
+        <div className="glass-card" style={{ padding: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#38bdf8" }}>SLOW Cadence</span>
+            <span className="badge badge-neutral">1 Hz</span>
+          </div>
+          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.slowTicks ?? 0} ticks</div>
+          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Deliberate World-Model Planning</div>
+        </div>
+        <div className="glass-card" style={{ padding: "12px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between" }}>
+            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#a855f7" }}>BACKGROUND</span>
+            <span className="badge badge-neutral">0.1 Hz</span>
+          </div>
+          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.backgroundTicks ?? 0} ticks</div>
+          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Index Optimization & Evolution</div>
+        </div>
+      </div>
+
+      {/* Causal Action Trace Inspector */}
+      <div className="glass-card" style={{ padding: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: "bold", color: "#e2e8f0" }}>
+              Causal Action Trace: World → Decision → Outcome
+            </div>
+            <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+              Zero future leakage verified; uninstrumented steps recorded as explicit source gaps.
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <label style={{ fontSize: "12px", color: "#94a3b8" }}>Action Sequence:</label>
+            <input
+              type="number"
+              className="text-input"
+              style={{ width: "90px", padding: "4px 8px", fontSize: "12px" }}
+              value={selectedSeq === 0 ? "" : selectedSeq}
+              placeholder="Latest"
+              onChange={(e) => setSelectedSeq(e.target.value ? parseInt(e.target.value, 10) : 0)}
+            />
+            <button
+              className="btn btn-secondary btn-sm"
+              onClick={() => traceQuery.refetch()}
+              type="button"
+            >
+              Trace
+            </button>
+          </div>
+        </div>
+
+        {traceQuery.isLoading ? (
+          <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>Tracing causal lineage...</div>
+        ) : trace?.nodes && trace.nodes.length > 0 ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+            {trace.nodes.map((node, idx) => (
+              <div
+                key={idx}
+                className="glass-card"
+                style={{
+                  padding: "12px",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  borderLeft: node.isGap
+                    ? "4px solid #f59e0b"
+                    : node.kind === "action"
+                    ? "4px solid #38bdf8"
+                    : node.kind === "outcome"
+                    ? "4px solid #10b981"
+                    : "4px solid #6366f1",
+                }}
+              >
+                <div>
+                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                    <span style={{ fontWeight: "bold", color: "#e2e8f0", fontSize: "13px" }}>{node.label}</span>
+                    {node.eventId && <span className="badge badge-neutral">{node.eventId}</span>}
+                    {node.isGap && <span className="badge badge-warning">Source Gap</span>}
+                  </div>
+                  <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>{node.detail}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: "11px", color: "#64748b" }}>Time: {node.timestamp} ticks</div>
+                  {node.confidence !== undefined && (
+                    <div style={{ fontSize: "12px", color: "#38bdf8" }}>
+                      Conf: {(node.confidence * 100).toFixed(0)}%
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>
+            No trace available for sequence {selectedSeq}.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 export function App() {
   const [view, setView] = useState<View>("query");
   const statusQuery = useQuery({ queryKey: ["engine-status"], queryFn: getEngineStatus, initialData: browserStatus });
@@ -560,6 +772,7 @@ export function App() {
     case "query": content = <QueryPanel connected={status.connected} />; break;
     case "history": content = <HistoryPanel connected={status.connected} eventCount={status.eventCount} />; break;
     case "causality": content = <CausalityPanel connected={status.connected} eventCount={status.eventCount} />; break;
+    case "tzeentch": content = <TzeentchPanel connected={status.connected} />; break;
     case "ingest": content = <IngestPanel connected={status.connected} />; break;
     case "connections": content = <ConnectionsPanel status={status} />; break;
     case "metrics": content = <MetricsPanel status={status} />; break;

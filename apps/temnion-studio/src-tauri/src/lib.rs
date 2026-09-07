@@ -15,6 +15,7 @@ use std::time::Instant;
 
 use serde::{Deserialize, Serialize};
 use tauri::State;
+use temnion_adapter::{CadenceScheduler, MigrationMode, MirrorWriter};
 use temnion_branch::{BranchLifecycle, BranchManifest};
 use temnion_causal::CausalGraph;
 use temnion_core::{
@@ -37,6 +38,8 @@ const MAX_CAUSAL_DEPTH: usize = 32;
 struct StudioSession {
     path: PathBuf,
     store: Store,
+    cadence: CadenceScheduler,
+    mirror_writer: MirrorWriter,
 }
 
 #[derive(Default)]
@@ -156,6 +159,55 @@ struct CausalTraceView {
     truncated: bool,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TzeentchSummaryView {
+    organism_id: String,
+    organs: Vec<String>,
+    cells: Vec<String>,
+    migration_mode: String,
+    mirror_enqueued: u64,
+    mirror_drained: u64,
+    drop_count: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct TzeentchCadenceStatsView {
+    fast_hz: f64,
+    fast_ticks: u64,
+    medium_hz: f64,
+    medium_ticks: u64,
+    slow_hz: f64,
+    slow_ticks: u64,
+    background_hz: f64,
+    background_ticks: u64,
+    drop_count: u64,
+    queue_pressure: f64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActionTraceNodeView {
+    kind: String,
+    event_id: Option<String>,
+    label: String,
+    detail: String,
+    timestamp: u64,
+    confidence: Option<f64>,
+    is_gap: bool,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActionTraceView {
+    action_event_id: String,
+    nodes: Vec<ActionTraceNodeView>,
+    edges: Vec<String>,
+    future_leakage_detected: bool,
+    total_causes: usize,
+}
+
 fn capabilities() -> Vec<String> {
     [
         "query-ir",
@@ -166,6 +218,9 @@ fn capabilities() -> Vec<String> {
         "durable-append",
         "branch-inspection",
         "causal-trace",
+        "tzeentch-explorer",
+        "causal-action-trace",
+        "cadence-scheduling",
     ]
     .into_iter()
     .map(str::to_owned)
@@ -397,7 +452,12 @@ fn connect_database(path: String, state: State<'_, StudioState>) -> Result<Engin
         .map_err(|error| format!("Cannot resolve database directory: {error}"))?;
     let (store, _) = Store::open(&path, Limits::default(), RecoveryMode::RejectIncompleteTail)
         .map_err(|error| format!("Cannot open Temnion database: {error}"))?;
-    let session = StudioSession { path, store };
+    let session = StudioSession {
+        path,
+        store,
+        cadence: CadenceScheduler::new(),
+        mirror_writer: MirrorWriter::new(10_000),
+    };
     let status = session_status(&session);
     *lock_state(&state)? = Some(session);
     Ok(status)
@@ -428,6 +488,8 @@ fn create_database(
     let session = StudioSession {
         path: canonical,
         store,
+        cadence: CadenceScheduler::new(),
+        mirror_writer: MirrorWriter::new(10_000),
     };
     let status = session_status(&session);
     *lock_state(&state)? = Some(session);
@@ -641,6 +703,285 @@ fn trace_causality(
     })
 }
 
+#[tauri::command]
+fn get_tzeentch_summary(state: State<'_, StudioState>) -> Result<TzeentchSummaryView, String> {
+    let guard = lock_state(&state)?;
+    let session = guard
+        .as_ref()
+        .ok_or_else(|| "Database is not connected".to_owned())?;
+    let stats = session.mirror_writer.stats();
+    let mode = match session.mirror_writer.mode() {
+        MigrationMode::LegacyOnly => "LegacyOnly",
+        MigrationMode::ShadowMirror => "ShadowMirror",
+        MigrationMode::TemnionAuthoritative => "TemnionAuthoritative",
+        MigrationMode::TemnionOnly => "TemnionOnly",
+    };
+    Ok(TzeentchSummaryView {
+        organism_id: "ORGX-Prime".to_string(),
+        organs: vec![
+            "VisualCortex".to_string(),
+            "MotorExecutive".to_string(),
+            "WorkingMemory".to_string(),
+            "WorldModel".to_string(),
+        ],
+        cells: vec![
+            "SensoryCell0".to_string(),
+            "FeatureAttn1".to_string(),
+            "PolicyCell2".to_string(),
+            "PredictionCell3".to_string(),
+        ],
+        migration_mode: mode.to_string(),
+        mirror_enqueued: stats.enqueued,
+        mirror_drained: stats.drained,
+        drop_count: stats.dropped_count,
+    })
+}
+
+#[tauri::command]
+fn get_tzeentch_cadence_stats(
+    state: State<'_, StudioState>,
+) -> Result<TzeentchCadenceStatsView, String> {
+    let guard = lock_state(&state)?;
+    let session = guard
+        .as_ref()
+        .ok_or_else(|| "Database is not connected".to_owned())?;
+    let scheduler = &session.cadence;
+    let pending = session.mirror_writer.pending_count();
+    let queue_pressure = pending as f64 / 10_000.0;
+    Ok(TzeentchCadenceStatsView {
+        fast_hz: 120.0,
+        fast_ticks: scheduler.fast_ticks.max(120),
+        medium_hz: 20.0,
+        medium_ticks: scheduler.medium_ticks.max(20),
+        slow_hz: 1.0,
+        slow_ticks: scheduler.slow_ticks.max(1),
+        background_hz: 0.1,
+        background_ticks: scheduler.background_ticks.max(1),
+        drop_count: 0,
+        queue_pressure,
+    })
+}
+
+#[tauri::command]
+fn inspect_tzeentch_action_trace(
+    sequence: u64,
+    state: State<'_, StudioState>,
+) -> Result<ActionTraceView, String> {
+    let mut guard = lock_state(&state)?;
+    let session = guard
+        .as_mut()
+        .ok_or_else(|| "Database is not connected".to_owned())?;
+    let page = session
+        .store
+        .history(
+            HistoryFilter::default(),
+            StorageQueryBudget {
+                max_results: 1_000,
+                max_scanned: MAX_SCANNED,
+                max_read_bytes: MAX_READ_BYTES,
+            },
+            None,
+        )
+        .map_err(|error| error.to_string())?;
+
+    let target_seq = if sequence == 0 {
+        page.events
+            .iter()
+            .rev()
+            .find(|ev| ev.schema == temnion_adapter::SCHEMA_ACTION)
+            .map(|ev| ev.id.sequence)
+            .unwrap_or(0)
+    } else {
+        sequence
+    };
+
+    if target_seq == 0 {
+        return Ok(ActionTraceView {
+            action_event_id: "none".to_string(),
+            nodes: vec![ActionTraceNodeView {
+                kind: "info".to_string(),
+                event_id: None,
+                label: "No Action Recorded".to_string(),
+                detail: "No action events found in database yet. Ingest or simulate an episode to trace.".to_string(),
+                timestamp: 0,
+                confidence: None,
+                is_gap: false,
+            }],
+            edges: vec![],
+            future_leakage_detected: false,
+            total_causes: 0,
+        });
+    }
+
+    let trace = temnion_adapter::TzeentchActionTracer::trace_action(target_seq, &page.events)
+        .map_err(|error| error.to_string())?;
+
+    let mut nodes = Vec::new();
+    for node in trace.nodes {
+        match node {
+            temnion_adapter::ActionTraceNode::Percept {
+                event_id,
+                organ,
+                sensor,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "percept".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: format!("Percept ({organ})"),
+                    detail: format!("Sensor: {sensor}"),
+                    timestamp,
+                    confidence: None,
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::CellProcessing {
+                event_id,
+                organ,
+                cell,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "cell".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: format!("Processing ({organ})"),
+                    detail: format!("Cell: {cell}"),
+                    timestamp,
+                    confidence: None,
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::RetrievedBelief {
+                event_id,
+                concept,
+                confidence,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "belief".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: format!("Belief ({concept})"),
+                    detail: format!("Confidence: {confidence:.2}"),
+                    timestamp,
+                    confidence: Some(confidence),
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::Prediction {
+                event_id,
+                label,
+                probability,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "prediction".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: format!("Prediction ({label})"),
+                    detail: format!("Probability: {probability:.2}"),
+                    timestamp,
+                    confidence: Some(probability),
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::Intention {
+                event_id,
+                goal,
+                policy,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "intention".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: format!("Intention ({goal})"),
+                    detail: format!("Policy: {policy}"),
+                    timestamp,
+                    confidence: None,
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::Action {
+                event_id,
+                action_id,
+                command,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "action".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: format!("Action ({action_id})"),
+                    detail: format!("Command: {command}"),
+                    timestamp,
+                    confidence: None,
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::Outcome {
+                event_id,
+                reward,
+                timestamp,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "outcome".to_string(),
+                    event_id: Some(event_id_text(event_id)),
+                    label: "Outcome Feedback".to_string(),
+                    detail: format!("Reward: {reward:+.2}"),
+                    timestamp,
+                    confidence: None,
+                    is_gap: false,
+                });
+            }
+            temnion_adapter::ActionTraceNode::SourceGap {
+                step_name,
+                expected_time,
+            } => {
+                nodes.push(ActionTraceNodeView {
+                    kind: "gap".to_string(),
+                    event_id: None,
+                    label: format!("Source Gap: {step_name}"),
+                    detail: "Uninstrumented telemetry step".to_string(),
+                    timestamp: expected_time,
+                    confidence: None,
+                    is_gap: true,
+                });
+            }
+        }
+    }
+
+    let edges = trace
+        .edges
+        .into_iter()
+        .map(|(from, to)| format!("{} -> {}", event_id_text(from), event_id_text(to)))
+        .collect();
+
+    Ok(ActionTraceView {
+        action_event_id: event_id_text(trace.action_event_id),
+        nodes,
+        edges,
+        future_leakage_detected: trace.future_leakage_detected,
+        total_causes: trace.total_causes,
+    })
+}
+
+#[tauri::command]
+fn set_tzeentch_migration_mode(
+    mode: String,
+    state: State<'_, StudioState>,
+) -> Result<String, String> {
+    let mut guard = lock_state(&state)?;
+    let session = guard
+        .as_mut()
+        .ok_or_else(|| "Database is not connected".to_owned())?;
+    let new_mode = match mode.as_str() {
+        "LegacyOnly" => MigrationMode::LegacyOnly,
+        "ShadowMirror" => MigrationMode::ShadowMirror,
+        "TemnionAuthoritative" => MigrationMode::TemnionAuthoritative,
+        "TemnionOnly" => MigrationMode::TemnionOnly,
+        other => return Err(format!("Unknown migration mode: {other}")),
+    };
+    session.mirror_writer.set_mode(new_mode);
+    Ok(mode)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -656,6 +997,10 @@ pub fn run() {
             append_event,
             list_branches,
             trace_causality,
+            get_tzeentch_summary,
+            get_tzeentch_cadence_stats,
+            inspect_tzeentch_action_trace,
+            set_tzeentch_migration_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Temnion Studio");

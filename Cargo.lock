@@ -45,12 +45,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3eaf3ede3fee6db1a4c2ee091bf8a8b4dccdc6d17f656fb07896ee72867612f2"
 
 [[package]]
+name = "temnion-adapter"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "temnion-causal",
+ "temnion-core",
+ "temnion-eks",
+ "temnion-events",
+ "temnion-format",
+ "temnion-query",
+ "temnion-storage",
+]
+
+[[package]]
 name = "temnion-bench"
 version = "0.1.0"
 dependencies = [
+ "temnion-adapter",
+ "temnion-branch",
+ "temnion-causal",
  "temnion-core",
  "temnion-events",
+ "temnion-evolution",
  "temnion-format",
+ "temnion-query",
  "temnion-state",
  "temnion-storage",
 ]
@@ -80,6 +99,7 @@ dependencies = [
 name = "temnion-cli"
 version = "0.1.0"
 dependencies = [
+ "temnion-adapter",
  "temnion-branch",
  "temnion-causal",
  "temnion-codec",
@@ -259,6 +279,7 @@ dependencies = [
 name = "temnion-storage"
 version = "0.1.0"
 dependencies = [
+ "crc32fast",
  "fs2",
  "getrandom",
  "temnion-core",

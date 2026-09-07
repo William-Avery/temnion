@@ -22,6 +22,11 @@ use temnion_format::{
 };
 use temnion_index::{BlockSummary, IndexError, SegmentSummary, SkipDecision};
 
+pub mod lifecycle;
+pub use lifecycle::{
+    BackupFileEntry, BackupManager, BackupManifest, ReferenceHold, RetentionPolicy,
+};
+
 #[derive(Debug)]
 pub enum StorageError {
     Io {

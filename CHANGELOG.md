@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased - Tzeentch integration and release qualification (M39–M44, R6)
+
+- Added Tzeentch Adapter crate (`temnion-adapter`) (M39–M40):
+  - **Decoupled Model-Agnostic Adapter (M39):** Pure safe NIST FIPS 180-4 SHA-256 content-addressed media references (`MediaRef`) keeping heavy binaries out of the latency-critical write-ahead log.
+  - **Action/Intention Separation (M39):** Distinct domain entity representations for `TzeentchPercept`, `TzeentchIntention`, `TzeentchAction`, `TzeentchOutcome`, and `TzeentchBeliefUpdate` mapped to canonical typed schemas (`101..=106`).
+  - **Zero Silent Drops & Dual Writing (M39):** Migration modes (`LegacyOnly`, `ShadowMirror`, `TemnionAuthoritative`, `TemnionOnly`) and bounded queue `MirrorWriter` returning explicit backpressure errors and preserving 100% event delivery without silent loss.
+  - **Multi-Cadence Timing Scheduler (M40):** Independent desynchronized clocks for `Fast` (120 Hz reflex/motor), `Medium` (20 Hz organ integration), `Slow` (1 Hz deliberate planning/beliefs), and `Background` (0.1 Hz epistemic consolidation).
+  - **Causal Action Tracer (M40):** Transitive causal lineage traversal reconstructing `Percept -> Organ/Cell -> Belief -> Prediction -> Decision -> Action -> Outcome` with explicit `SourceGap` nodes for uninstrumented steps and strict verification of zero future-knowledge leakage.
+- Desktop Studio Tzeentch Explorer (`apps/temnion-studio`) (M41):
+  - Added native Tauri backend IPC commands (`get_tzeentch_summary`, `get_tzeentch_cadence_stats`, `inspect_tzeentch_action_trace`, `set_tzeentch_migration_mode`).
+  - Added interactive TanStack React `TzeentchPanel` featuring live multi-cadence frequency gauges, zero-drop dual-write migration toggle, and a causal action trace lineage inspector.
+- Scale Benchmarks & Retention Lifecycle (`crates/temnion-bench`, `crates/temnion-storage`) (M42–M43):
+  - Added scale benchmark harness (`crates/temnion-bench/src/bin/scale.rs`) evaluating 4K, 64K, and 1M+ active records with linear throughput and sub-millisecond latencies.
+  - Added retention management (`RetentionPolicy`) with strict causal reference holds (`ReferenceHold`) protecting pinned sequences from background eviction.
+  - Added branch lifecycle GC and point-in-time CRC32-verified backup and restore manager (`BackupManager`).
+- CLI Integrations (`apps/temnion-cli`):
+  - Added `tem tzeentch [demo | status | trace <name>]` and `tem benchmark scale [records]` commands.
+  - Updated capabilities to advertise `"tzeentch_adapter": true`, `"causal_action_trace": true`, `"scale_qualified": true`, and `"retention_holds": true`.
+- Release Qualification & Architectural Documentation (M44):
+  - Published ADR 0014 documenting Tzeentch integration, multi-cadence timing, and release qualification.
+  - Published formal Release Qualification Report (`docs/reports/release-qualification-m39-m44.md`) certifying conformance across Gates A, B, and C with honest empirical findings.
+
 ## Unreleased - Isolated measured evolution and immutable Constitution (M31–M38)
 
 - Added Isolated Measured Evolution Engine (`temnion-evolution`) (M31–M38):

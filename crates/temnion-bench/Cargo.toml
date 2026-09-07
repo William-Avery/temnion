@@ -15,6 +15,11 @@ temnion-state.workspace = true
 temnion-events.workspace = true
 temnion-format.workspace = true
 temnion-storage.workspace = true
+temnion-causal.workspace = true
+temnion-branch.workspace = true
+temnion-adapter.workspace = true
+temnion-evolution.workspace = true
+temnion-query.workspace = true
 
 [lints]
 workspace = true

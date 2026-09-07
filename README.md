@@ -17,13 +17,13 @@ milestones.**
 
 Temnion separates live state from append-only evidence. Its long-term architecture
 adds durable history, deterministic reconstruction, derived knowledge (EKS),
-versioned transformations, and carefully gated evolution. Tzeentch is a planned
-first consumer, not a dependency of the database core.
+versioned transformations, carefully gated evolution, and decoupled consumer integration.
+Tzeentch is an integrated first consumer, fully decoupled from the deterministic database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), Epistemic Knowledge Store (EKS), deterministic transformations, canonical IR e-graphs, and an initial Temnion Studio desktop slice.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), Epistemic Knowledge Store (EKS), deterministic transformations, canonical IR e-graphs, isolated measured evolution, model-agnostic Tzeentch consumer adapter, multi-cadence timing, desktop Temnion Studio with Tzeentch Explorer, and scale/lifecycle release qualification (R1–R6, M01–M44 complete).**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
-> batches and acknowledges only after OS synchronization, with explicit recovery
-> and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
+> batches and acknowledges only after OS synchronization, with explicit recovery,
+> immutable TSF exports, retention policies with causal reference holds, and CRC32 point-in-time backup/restore. `temnion-replay` provides checksummed checkpoints and
 > deterministic reconstruction with bit-for-bit replay equivalence. `temnion-codec`
 > provides dynamically scored lossless compression primitives. `temnion-branch`
 > provides structurally shared branching timelines and persistent DAG manifests.
@@ -42,6 +42,10 @@ first consumer, not a dependency of the database core.
 > cascading retraction, `WHY` provenance traversal, predictive calibration, and tiered consolidation.
 > `temnion-transform` provides deterministic transformations, CPU/memory resource metering,
 > and canonical query IR e-graph optimization with equality saturation and cycle-safe extraction.
+> `temnion-evolution` provides isolated measured evolution, adaptive physical memory,
+> adaptive lifecycle evaluators, and immutable Constitution hardening.
+> `temnion-adapter` provides the decoupled consumer adapter, content-addressed media references (`MediaRef`),
+> bounded mirror writes with zero silent drops, multi-timescale cadence scheduling, and causal action trace introspection.
 
 ## What works now
 
@@ -52,7 +56,7 @@ first consumer, not a dependency of the database core.
 | `temnion-events` | Per-source bounded `EventLog<T>`, typed payloads, atomic batch admission, entity/time/known-as-of filters and bounded snapshot pagination |
 | `temnion-schema` | Validated scalar schemas, exact typed values, sparse mutations, atomic in-memory apply and bounded canonical binary encoding |
 | `temnion-format` | Versioned, bounded, checksummed WAL headers/batches and independently readable raw TSF v1 segments |
-| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, predicate pushdown block skipping and companion TSM export |
+| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, predicate pushdown block skipping, companion TSM export, retention policies, causal reference holds, and CRC32 point-in-time backup/restore |
 | `temnion-codec` | Strictly lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with CRC32C framing, dynamic scoring and raw fallback |
 | `temnion-index` | Hierarchical summaries (TNSM), zone maps, Bloom filters, Morton 2D/3D SFC layouts, and zero-duplication alternate projections (TNPR) |
 | `temnion-replay` | Deterministic reconstruction, periodic atomic checkpoints (TNCP), SplitMix64 step-counted PRNG tracking and bit-for-bit replay equivalence |
@@ -66,9 +70,10 @@ first consumer, not a dependency of the database core.
 | `temnion-eks` | Epistemic Knowledge Store (EKS) with versioned primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance with non-destructive cascading retraction, `WHY` provenance traversal, predictive ledger with Brier score calibration, and tiered consolidation (`Active`, `Reference`, `Archive`) |
 | `temnion-transform` | Deterministic transformation engine with versioned manifests, typed signatures, CPU/memory resource metering, immutable lineage logs, and canonical query IR e-graph optimizer with equality saturation, constant folding, and cycle-safe plan extraction |
 | `temnion-evolution` | Isolated measured evolution engine (`EvolutionEngine`, `ChampionChallengerRegistry`), adaptive physical memory and lifecycle evaluators, semantic/vector projection index (`SemanticProjectionIndex`), gated meta-evolution (`MutationPolicy`), and runtime immutable Constitution hardening (`Constitution`, 8 axioms, `ConstitutionAudit`) |
-| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, `rewrite-demo`, and `evolve` commands |
-| `temnion-studio` | Initial Tauri 2 + React/TypeScript desktop client using TanStack Query/Table for real bounded local open/create, query, EXPLAIN, history, append, branch inspection and causal-trace flows |
-| `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
+| `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), and causal action tracer (`TzeentchActionTracer`) with explicit `SourceGap` nodes and zero future leakage |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, `rewrite-demo`, `evolve`, `tzeentch`, and `benchmark scale` commands |
+| `temnion-studio` | Tauri 2 + React/TypeScript desktop client using TanStack Query/Table for local open/create, query, EXPLAIN, history, append, branch inspection, causal-trace flows, and dedicated Tzeentch Explorer with live cadence monitors, migration mode toggle, and causal action trace graph |
+| `temnion-bench` | In-memory baselines, durable on-disk batch workloads, multi-cadence scale harness (4K, 64K, 1M+ active records), and retention lifecycle stress harness |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
 with zone maps and Bloom filters, zero-duplication alternate projections, and bounded frame decoding.
@@ -77,8 +82,7 @@ Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
 **Still unfinished:** manifest-based WAL retirement,
-standalone `temniond` daemon, full Studio v1 and native platform packaging,
-and Tzeentch integration.
+standalone `temniond` daemon, and native platform packaging (deb/rpm/msi).
 
 ## Quick start
 
