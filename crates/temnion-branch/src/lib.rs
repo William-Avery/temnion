@@ -3,9 +3,11 @@
 //!
 //! Following Temnion Architecture §19:
 //! - History forms a persistent DAG of branched timelines:
-//!     A -> B -> C
-//!               +-> D1 -> E1
-//!               +-> D2 -> E2
+//!   ```text
+//!   A -> B -> C
+//!             +-> D1 -> E1
+//!             +-> D2 -> E2
+//!   ```
 //! - Branches share all immutable ancestor segments and WAL records prior to divergence.
 //! - Creating a branch is an O(1) metadata operation without file duplication.
 //! - Supports branch lifecycle states: Active, Temporary, Candidate, Promoted, Retired.
