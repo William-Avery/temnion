@@ -1,0 +1,11 @@
+[package]
+name = "temnion-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Model-agnostic identifiers and temporal contracts for Temnion"
+
+[lints]
+workspace = true

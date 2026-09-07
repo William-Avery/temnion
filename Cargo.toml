@@ -1,0 +1,31 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/temnion-core",
+    "crates/temnion-state",
+    "crates/temnion-events",
+    "crates/temnion-bench",
+    "apps/temnion-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "AGPL-3.0-only"
+repository = "https://github.com/William-Avery/temnion"
+
+[workspace.dependencies]
+temnion-core = { path = "crates/temnion-core" }
+temnion-state = { path = "crates/temnion-state" }
+temnion-events = { path = "crates/temnion-events" }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

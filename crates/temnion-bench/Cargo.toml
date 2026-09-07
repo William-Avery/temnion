@@ -1,0 +1,17 @@
+[package]
+name = "temnion-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Reproducible foundation reference workloads for Temnion"
+publish = false
+
+[dependencies]
+temnion-core.workspace = true
+temnion-state.workspace = true
+temnion-events.workspace = true
+
+[lints]
+workspace = true
