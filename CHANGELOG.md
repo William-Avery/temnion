@@ -1,5 +1,21 @@
 # Changelog
 
+## Unreleased - Isolated measured evolution and immutable Constitution (M31–M38)
+
+- Added Isolated Measured Evolution Engine (`temnion-evolution`) (M31–M38):
+  - **Champion/Challenger Evolution Engine (M31):** Versioned candidate registry (`CandidateRecord`, `CandidateKind`, `CandidateStatus`, `CandidateLineage`), sandboxed isolation budget (`IsolationBudget`), holistic net-benefit scoring, mandatory manual approval before promotion, and instantaneous atomic rollback upon detected regression.
+  - **Adaptive Physical Memory (M32):** Representation candidate evaluation over sealed segments comparing codecs/layouts/indexes against static incumbents using holistic storage fitness (accounting for bytes, scan latency, CPU cycles, and read amplification).
+  - **Adaptive Lifecycle Policies (M33):** Dynamic tuning of checkpoint intervals (balancing recovery replay latency against snapshot serialization overhead) and cache tier placement thresholds.
+  - **Semantic and Vector Projections (M34):** Fixed-dimension dense vector embeddings (`VectorEmbedding`) with cosine similarity, dot product, and euclidean distance, plus `SemanticProjectionIndex` for associative nearest-neighbor retrieval strictly segregated from authoritative exact storage.
+  - **Knowledge Mutation (M35):** Generation and evaluation of candidate beliefs and inferential rules against empirical evidence, penalizing contradiction rates and Brier score regressions.
+  - **Transformation Mutation (M36):** Mutation and validation of candidate transformation manifests under constitutional budget limits with verified semantic equivalence.
+  - **Meta-Evolution (M37):** Mutation policy evolution (`MutationPolicy`) gated strictly behind Gate C net adaptive value verification, with an unconditional runtime hard off-switch.
+  - **Immutable Constitution Hardening (M38):** Runtime verification and enforcement of 8 non-evolvable constitutional axioms (`ConstitutionalAxiom`), blocking any attempt to mutate storage evidence, rewrite the Constitution, or bypass promotion gates, backed by a comprehensive audit framework (`ConstitutionAudit`).
+- Interface Integrations:
+  - Added `evolution_status`, `candidate_evaluate`, and `constitution_audit` tools to Model Context Protocol server (`temnion-mcp`).
+  - Added `tem evolve status`, `tem evolve audit`, and `tem evolve demo` CLI commands to `apps/temnion-cli`, and updated capabilities to advertise `"evolution": true`, `"constitution": true`, and `"semantic_projections": true`.
+- Published ADR 0013 documenting isolated measured evolution, candidate lifecycle, Gate C criteria, and the 8 immutable constitutional axioms.
+
 ## Unreleased - Epistemic Knowledge Store (EKS) and transformation engine (M25–M30)
 
 - Added Epistemic Knowledge Store (`temnion-eks`) (M25–M28):

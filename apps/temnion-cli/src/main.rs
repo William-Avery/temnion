@@ -50,6 +50,7 @@ Usage: tem [help | version | describe | demo]
        tem mcp [directory]
        tem why-demo
        tem rewrite-demo <expression>
+       tem evolve [status | audit | demo]
 
   help       Show this help
   version    Show the version
@@ -57,6 +58,7 @@ Usage: tem [help | version | describe | demo]
   demo       Run an in-memory state/history example; writes no files
   why-demo   Run an in-memory Epistemic Knowledge Store (EKS) and WHY trace example
   rewrite-demo Run an e-graph equality saturation optimization on an expression
+  evolve     Inspect champion/challenger evolution engine, audit constitution, or run demo
   init       Create a durable source log with an OS-random database identity
   append     Persist one opaque typed payload; acknowledge only after OS sync
   history    Read one bounded history page (payload previews, default 100 rows)
@@ -97,7 +99,9 @@ const CAPABILITIES: &str = concat!(
     "\"background-dag\", \"storage-hierarchy\", \"query-ir\", \"temql\", ",
     "\"compact-tem\", \"sql\", \"tnp\", \"local-ipc\", \"arrow-columnar\", \"c-abi\", ",
     "\"flight\", \"mcp\", \"eks\", \"provenance\", \"predictive-knowledge\", ",
-    "\"knowledge-consolidation\", \"transformations\", \"e-graphs\"],\n",
+    "\"knowledge-consolidation\", \"transformations\", \"e-graphs\", ",
+    "\"evolution\", \"adaptive-physical-memory\", \"adaptive-lifecycle\", ",
+    "\"semantic-projections\", \"constitution\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
@@ -108,6 +112,9 @@ const CAPABILITIES: &str = concat!(
     "  \"eks\": true,\n",
     "  \"transformations\": true,\n",
     "  \"e-graphs\": true,\n",
+    "  \"evolution\": true,\n",
+    "  \"constitution\": true,\n",
+    "  \"semantic_projections\": true,\n",
     "  \"studio\": false\n",
     "}"
 );
@@ -876,6 +883,170 @@ fn run() -> Result<(), Box<dyn Error>> {
             writeln!(out, "  Saturation Iterations: {}", report.iterations)?;
             writeln!(out, "  Extracted Minimal Expression: {extracted}")?;
             writeln!(out, "  Minimal AST Cost: {cost}")?;
+        }
+        ("evolve", parameters) => {
+            let sub = parameters
+                .first()
+                .map(|v| text(v))
+                .transpose()?
+                .unwrap_or("status");
+            match sub {
+                "status" => {
+                    let mut engine = temnion_evolution::EvolutionEngine::new(
+                        temnion_evolution::EvolutionConfig::default(),
+                    );
+                    let baseline = temnion_evolution::FitnessMetrics {
+                        latency_p50_us: 1000,
+                        latency_p99_us: 2000,
+                        memory_bytes: 10_000_000,
+                        storage_bytes: 50_000_000,
+                        cpu_cycles: 500_000,
+                        read_amplification: 2.0,
+                        write_amplification: 1.5,
+                        background_cost_score: 0.10,
+                        net_benefit_score: 0.0,
+                    };
+                    engine.register_incumbent(
+                        temnion_evolution::CandidateKind::Codec,
+                        "segment_compression".into(),
+                        b"RawIncumbentCodec".to_vec(),
+                        baseline,
+                    );
+                    writeln!(out, "Temnion Champion/Challenger Evolution Engine Status:")?;
+                    writeln!(out, "  Evolution Enabled: {}", engine.config().enabled)?;
+                    writeln!(
+                        out,
+                        "  Manual Promotion Required: {}",
+                        engine.config().manual_promotion_required
+                    )?;
+                    writeln!(out, "  Gate C Passed: {}", engine.config().gate_c_passed)?;
+                    writeln!(out, "  Active Incumbents:")?;
+                    for inc in engine.list_incumbents() {
+                        writeln!(
+                            out,
+                            "    - [domain='{}' kind={:?} ID={}]",
+                            inc.target_domain, inc.kind, inc.id.0
+                        )?;
+                    }
+                }
+                "audit" => {
+                    let mut engine = temnion_evolution::EvolutionEngine::new(
+                        temnion_evolution::EvolutionConfig::default(),
+                    );
+                    let baseline = temnion_evolution::FitnessMetrics {
+                        latency_p50_us: 1000,
+                        latency_p99_us: 2000,
+                        memory_bytes: 10_000_000,
+                        storage_bytes: 50_000_000,
+                        cpu_cycles: 500_000,
+                        read_amplification: 2.0,
+                        write_amplification: 1.5,
+                        background_cost_score: 0.10,
+                        net_benefit_score: 0.0,
+                    };
+                    engine.register_incumbent(
+                        temnion_evolution::CandidateKind::Index,
+                        "entity_bloom".into(),
+                        b"StandardBloom".to_vec(),
+                        baseline,
+                    );
+                    let report = engine.audit_constitution();
+                    writeln!(out, "Temnion Immutable Constitution Audit:")?;
+                    writeln!(
+                        out,
+                        "  Conformance: {}",
+                        if report.passed { "CERTIFIED" } else { "FAILED" }
+                    )?;
+                    writeln!(out, "  Axioms Certified: {}/8", report.axioms_checked)?;
+                    writeln!(out, "  Audited Incumbents: {}", report.audited_incumbents)?;
+                    writeln!(out, "  Audited Candidates: {}", report.audited_candidates)?;
+                    writeln!(out, "  Violations Detected: {}", report.violations.len())?;
+                }
+                "demo" => {
+                    let mut engine = temnion_evolution::EvolutionEngine::new(
+                        temnion_evolution::EvolutionConfig {
+                            enabled: true,
+                            manual_promotion_required: true,
+                            gate_c_passed: true,
+                            min_net_benefit_threshold: 0.05,
+                        },
+                    );
+                    let baseline = temnion_evolution::FitnessMetrics {
+                        latency_p50_us: 1000,
+                        latency_p99_us: 2000,
+                        memory_bytes: 10_000_000,
+                        storage_bytes: 50_000_000,
+                        cpu_cycles: 500_000,
+                        read_amplification: 2.0,
+                        write_amplification: 1.5,
+                        background_cost_score: 0.10,
+                        net_benefit_score: 0.0,
+                    };
+                    let inc_id = engine.register_incumbent(
+                        temnion_evolution::CandidateKind::Codec,
+                        "segment_compression".into(),
+                        b"RawIncumbent".to_vec(),
+                        baseline,
+                    );
+                    let cand_id = engine.propose_candidate(
+                        temnion_evolution::CandidateKind::Codec,
+                        "segment_compression".into(),
+                        temnion_evolution::CandidateLineage {
+                            candidate_id: temnion_evolution::CandidateId(0),
+                            parent_candidate_id: Some(inc_id),
+                            target_domain: "segment_compression".into(),
+                            created_at_ms: 2000,
+                            mutation_operator: "AdaptiveBitPackDelta".into(),
+                            rationale: "BitPack + Delta compression candidate".into(),
+                        },
+                        b"AdaptiveBitPackDelta".to_vec(),
+                    )?;
+                    let challenger_simulated = temnion_evolution::FitnessMetrics {
+                        latency_p50_us: 800,
+                        latency_p99_us: 1600,
+                        memory_bytes: 8_000_000,
+                        storage_bytes: 35_000_000,
+                        cpu_cycles: 400_000,
+                        read_amplification: 1.5,
+                        write_amplification: 1.5,
+                        background_cost_score: 0.11,
+                        net_benefit_score: 0.0,
+                    };
+                    let evaluated = engine.evaluate_candidate(
+                        cand_id,
+                        &temnion_evolution::EvaluationWorkload {
+                            workload_id: "shadow_scan".into(),
+                            sample_keys: vec!["entity_1".into()],
+                            sample_events: 500,
+                            iterations: 5,
+                        },
+                        temnion_evolution::IsolationBudget::default(),
+                        challenger_simulated,
+                    )?;
+                    engine.promote_candidate(cand_id, Some("lead_architect"), 3000)?;
+                    writeln!(out, "Temnion Evolution Champion/Challenger Demo:")?;
+                    writeln!(out, "  Static Incumbent: ID={}", inc_id.0)?;
+                    writeln!(out, "  Challenger Proposed: ID={}", cand_id.0)?;
+                    writeln!(
+                        out,
+                        "  Net Benefit Score: {:.3} ({:.1}% gain)",
+                        evaluated.net_benefit_score,
+                        evaluated.net_benefit_score * 100.0
+                    )?;
+                    writeln!(out, "  Manual Promotion: Promoted by 'lead_architect'")?;
+                    writeln!(
+                        out,
+                        "  Active Incumbent: ID={}",
+                        engine.active_incumbent("segment_compression").unwrap().id.0
+                    )?;
+                }
+                other => {
+                    return Err(format!(
+                        "unknown evolve subcommand '{other}'; use 'status', 'audit', or 'demo'"
+                    )
+                    .into());
+                }
+            }
         }
         _ => {
             return Err(format!(

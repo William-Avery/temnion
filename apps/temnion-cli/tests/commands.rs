@@ -57,6 +57,9 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"c-abi\""));
     assert!(text.contains("\"flight\""));
     assert!(text.contains("\"mcp\""));
+    assert!(text.contains("\"evolution\": true"));
+    assert!(text.contains("\"constitution\": true"));
+    assert!(text.contains("\"semantic_projections\": true"));
 }
 
 #[test]
@@ -493,4 +496,45 @@ fn why_demo_and_rewrite_demo_cli_commands() {
     assert!(rewrite_text.contains("Canonical IR E-Graph Optimization:"));
     assert!(rewrite_text.contains("Extracted Minimal Expression: status"));
     assert!(rewrite_text.contains("Minimal AST Cost: 2"));
+}
+
+#[test]
+fn evolve_cli_commands() {
+    // 1. tem evolve status
+    let status_res = tem(&["evolve", "status"]);
+    assert!(
+        status_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&status_res.stderr)
+    );
+    let status_text = String::from_utf8(status_res.stdout).unwrap();
+    assert!(status_text.contains("Champion/Challenger Evolution Engine Status:"));
+    assert!(status_text.contains("Active Incumbents:"));
+    assert!(status_text.contains("segment_compression"));
+
+    // 2. tem evolve audit
+    let audit_res = tem(&["evolve", "audit"]);
+    assert!(
+        audit_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&audit_res.stderr)
+    );
+    let audit_text = String::from_utf8(audit_res.stdout).unwrap();
+    assert!(audit_text.contains("Temnion Immutable Constitution Audit:"));
+    assert!(audit_text.contains("Conformance: CERTIFIED"));
+    assert!(audit_text.contains("Axioms Certified: 8/8"));
+
+    // 3. tem evolve demo
+    let demo_res = tem(&["evolve", "demo"]);
+    assert!(
+        demo_res.status.success(),
+        "{}",
+        String::from_utf8_lossy(&demo_res.stderr)
+    );
+    let demo_text = String::from_utf8(demo_res.stdout).unwrap();
+    assert!(demo_text.contains("Temnion Evolution Champion/Challenger Demo:"));
+    assert!(demo_text.contains("Static Incumbent: ID=1"));
+    assert!(demo_text.contains("Challenger Proposed: ID=2"));
+    assert!(demo_text.contains("Net Benefit Score:"));
+    assert!(demo_text.contains("Manual Promotion: Promoted by 'lead_architect'"));
 }

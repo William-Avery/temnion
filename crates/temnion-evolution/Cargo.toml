@@ -1,0 +1,20 @@
+[package]
+name = "temnion-evolution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Isolated measured evolution engine and immutable Constitution for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-events.workspace = true
+temnion-eks.workspace = true
+temnion-transform.workspace = true
+temnion-query.workspace = true
+temnion-codec.workspace = true
+temnion-index.workspace = true
+
+[lints]
+workspace = true
