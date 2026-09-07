@@ -1,0 +1,27 @@
+name: Design or roadmap feedback
+description: Discuss requirements, contracts or benchmark methodology without submitting code.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Read docs/ROADMAP.md first. Outside code is not accepted until owner-approved
+        CLA/relicensing terms exist. Proposals do not imply implementation commitments.
+  - type: input
+    id: milestone
+    attributes:
+      label: Related roadmap milestone
+      description: T00–T21, source M0–M44, or a Gate A/B/C concern, if applicable.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem and use case
+      description: Explain the consumer need and why existing/planned behavior is insufficient.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Proposed contract and acceptance evidence
+      description: Note exactness, clocks, durability, resource limits, simpler alternatives and evaluation method.
+    validations:
+      required: true

@@ -1,0 +1,30 @@
+name: Bug report
+description: Report a reproducible problem in the implemented foundation.
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For security issues, follow SECURITY.md instead of posting details here.
+        Outside code contributions are paused pending approved relicensing terms.
+        Please provide commands and observations, not private data or copied patches.
+  - type: input
+    id: revision
+    attributes:
+      label: Revision and environment
+      description: Commit/version, OS, CPU architecture and rustc version.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction
+      description: Minimal commands and non-sensitive inputs; note any capacity or query budgets.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: Include error messages and exit status. This foundation has no durable storage.
+    validations:
+      required: true

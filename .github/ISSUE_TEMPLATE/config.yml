@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security reporting policy
+    url: https://github.com/William-Avery/temnion/blob/main/SECURITY.md
+    about: Report suspected vulnerabilities privately using the contact in SECURITY.md.
+  - name: Licensing and contribution policy
+    url: https://github.com/William-Avery/temnion/blob/main/CONTRIBUTING.md
+    about: Review the outside-code restriction and approved licensing contact before preparing a contribution.

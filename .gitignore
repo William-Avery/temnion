@@ -1,0 +1,94 @@
+# Rust outputs, including nested Tauri/Cargo targets.
+target/
+**/*.rs.bk
+
+# Future desktop frontend dependencies and generated outputs.
+node_modules/
+/apps/**/dist/
+/apps/**/build/
+/apps/**/.vite/
+/apps/**/.cache/
+/apps/**/.turbo/
+/apps/**/.parcel-cache/
+/apps/**/coverage/
+/apps/**/*.tsbuildinfo
+/apps/**/src-tauri/gen/schemas/
+
+# Generated release/package artifacts, not arbitrary binary fixtures.
+/artifacts/
+/release-artifacts/
+/*.exe
+/*.dll
+/*.pdb
+/*.so
+/*.so.*
+/*.dylib
+/*.msi
+/*.msix
+/*.deb
+/*.rpm
+/*.AppImage
+/*.dmg
+/temnion-*.zip
+/temnion-*.tar.gz
+/temnion-*.tar.xz
+
+# Local data belongs here; checked-in tests/fixtures remain visible.
+/local-data/
+/local-recordings/
+/local-databases/
+/local-models/
+/benchmark-results/
+/coverage/
+/logs/
+/*.orgx
+/*.orgv
+/*.svs
+/*.tsf
+/*.wal
+/*.db
+/*.db-*
+/*.sqlite
+/*.sqlite-*
+/*.sqlite3
+/*.sqlite3-*
+/*.onnx
+/*.safetensors
+/*.gguf
+/*.pt
+/*.pth
+/*.log
+*.profraw
+*.profdata
+
+# Local editor and operating-system files.
+/.idea/
+/.vscode/
+*.swp
+*.swo
+*~
+/*.tmp
+/*.temp
+.DS_Store
+._*
+Thumbs.db
+Desktop.ini
+
+# Local secrets; only deliberately sanitized environment examples are allowed.
+.env
+.env.*
+!.env.example
+!.env.*.example
+!.env.sample
+!.env.template
+/secrets/
+/.secrets/
+/.credentials/
+/credentials.json
+/*.pem
+/*.key
+/*.p12
+/*.pfx
+
+# Intentionally tracked: Cargo.lock, package-lock.json, pnpm-lock.yaml,
+# yarn.lock, bun.lock/bun.lockb, licensing files, and architecture .md/.docx.
