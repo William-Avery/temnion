@@ -1,0 +1,16 @@
+[package]
+name = "temnion-causal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Compact causal history indexing and event DAG tracing for Temnion"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-format.workspace = true
+crc32fast = "1.4"
+
+[lints]
+workspace = true

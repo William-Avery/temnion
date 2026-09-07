@@ -9,6 +9,8 @@ members = [
     "crates/temnion-storage",
     "crates/temnion-codec",
     "crates/temnion-replay",
+    "crates/temnion-causal",
+    "crates/temnion-branch",
     "crates/temnion-bench",
     "apps/temnion-cli",
 ]
@@ -29,6 +31,8 @@ temnion-schema = { path = "crates/temnion-schema" }
 temnion-storage = { path = "crates/temnion-storage" }
 temnion-codec = { path = "crates/temnion-codec" }
 temnion-replay = { path = "crates/temnion-replay" }
+temnion-causal = { path = "crates/temnion-causal" }
+temnion-branch = { path = "crates/temnion-branch" }
 crc32fast = "1.4"
 fs2 = "0.4.3"
 getrandom = "0.2"
