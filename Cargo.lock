@@ -88,6 +88,7 @@ dependencies = [
  "temnion-format",
  "temnion-index",
  "temnion-replay",
+ "temnion-runtime",
  "temnion-schema",
  "temnion-state",
  "temnion-storage",
@@ -141,6 +142,19 @@ dependencies = [
  "temnion-events",
  "temnion-format",
  "temnion-schema",
+ "temnion-state",
+ "temnion-storage",
+]
+
+[[package]]
+name = "temnion-runtime"
+version = "0.1.0"
+dependencies = [
+ "temnion-codec",
+ "temnion-core",
+ "temnion-events",
+ "temnion-format",
+ "temnion-index",
  "temnion-state",
  "temnion-storage",
 ]

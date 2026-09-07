@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, M5 lossless codecs, M6 N-D layouts, M7 alternate projections, M11 filters and block skipping, M12 hierarchical summaries, M13 branching timelines, M14 multi-time semantics, and M15 causal DAG tracing.**
+**M0/M1 foundation, typed scalar M2 payloads, durable M4 source logs, M3 deterministic replay, M5 lossless codecs, M6 N-D layouts, M7 alternate projections, M8 virtual shards, M9 background task DAG, M10 storage hierarchy, M11 filters and block skipping, M12 hierarchical summaries, M13 branching timelines, M14 multi-time semantics, and M15 causal DAG tracing.**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -36,11 +36,17 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 - Zero-payload-duplication alternate projections (`temnion-index`), providing inverted entity,
   temporal, spatial Morton, and schema bitmap indexing with multi-predicate intersection and
   CRC32C-framed binary persistence (`TNPR`).
+- Virtual-shard execution (`temnion-runtime`) with single-writer partition ownership and deterministic
+  multi-shard sequence merge ordering.
+- Background task DAG (`temnion-runtime`) with priority classes (Seal, Compress, Index, Summary,
+  Maintenance), cycle prevention, and adaptive foreground pressure throttling.
+- Storage hierarchy & tiers (`temnion-runtime`) organizing Hot DRAM, Warm Mapped, and Cold Media with
+  LRU-bounded capacity eviction and auto-promotion.
 - Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
   causal-trace, and inspect-summary commands.
 
 This does **not** complete R0 or R1: most T01 specifications, most A–L workloads,
-full N-D schemas, manifest-based lifecycle, and virtual-shard execution remain future work.
+full N-D schemas, and manifest-based lifecycle remain future work.
 It does not complete M18 protocol negotiation or full TemQL.
 No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
 See [README](../README.md) for the implemented package inventory.
@@ -101,7 +107,7 @@ Cross-shard transactions are not silently inferred from source-local atomicity.
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
 | T07 — Efficient immutable representations | Lossless codecs (M5), Morton N-D layouts (M6), alternate projections (M7), block skipping (M11), and hierarchical summaries (M12) implemented; candidates gated | Lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring and raw fallback. Morton 2D/3D space-filling curve encoding, grid chunking, and bounding box interval decomposition. Zero-duplication alternate projections (entity, temporal, spatial, schema) with multi-predicate intersection. Hierarchical summaries (`temnion-index`) with clock-scoped zone maps, entity Bloom filters, and zero-false-negative predicate pushdown block skipping in storage. Hilbert/ALP candidates remain future work. |
-| T08 — Virtual-shard runtime and tiers | Future | Bounded queues, owned shard groups, local allocators, consistent cross-shard cuts, bounded fanout/merge and resumable background DAGs. Portable DRAM/page-cache/NVMe first; exercise skew, saturation, storage pressure and interrupted work. |
+| T08 — Virtual-shard runtime and tiers | Virtual-shard execution (M8), background task DAG (M9), and tiered storage hierarchy (M10) implemented | Single-writer virtual partition ownership, core scaling, explicit/modular shard routing, and deterministic total order merge fanout (`temnion-runtime`). Priority-weighted background task DAG (Seal, Compress, Index, Summary, Maintenance), cycle prevention via Kahn's algorithm, and adaptive foreground pressure throttling. Three-tier storage hierarchy (Hot DRAM, Warm Mapped, Cold Media) with LRU eviction and auto-promotion. |
 | T09 — Embedded Tzeentch integration | Future | Separate feature-gated adapter and consumer change: fixtures/import, idempotency, bounded mirrored writes, drain/error reporting, historical-read parity and a rollback switch. Keep existing recorder/memory behavior authoritative until gates pass. |
 | T10 — Operations and enforcement | Future | Health/metrics, policy/authorization hooks, exact no-auto-delete retention, reference-aware GC, backup/restore, inspection/repair, schema/format migration and auditable operations. Validate recovery and foreground resource protection. |
 
@@ -189,9 +195,9 @@ original files retain their historical names unchanged.
 | M5 | Compression framework | T07 | Lossless codec framework (Raw, RLE, BitPack, Delta-FOR, XOR) with dynamic candidate scoring (`temnion-codec`) |
 | M6 | N-dimensional chunking/layouts | T07 | Morton 2D/3D SFC bit-dilation, bounding box decomposition, and uniform grid chunking (`temnion-index`) |
 | M7 | Alternate projections | T07 | Zero-duplication entity, temporal, spatial Morton, and schema projections with multi-predicate intersection (`temnion-index`) |
-| M8 | Virtual-shard execution | T08 | Future |
-| M9 | Background task DAG | T08 | Future |
-| M10 | Storage hierarchy | T08 | Future |
+| M8 | Virtual-shard execution | T08 | Single-writer partition ownership, modular/explicit routing, core scaling, and deterministic multi-shard merge ordering (`temnion-runtime`) |
+| M9 | Background task DAG | T08 | Priority-weighted background task DAG (Seal, Compress, Index, Summary, Maintenance), Kahn cycle detection, and foreground pressure throttling (`temnion-runtime`) |
+| M10 | Storage hierarchy | T08 | Three-tier storage management (HotDram, WarmMapped, ColdMedia), capacity limits, LRU eviction, and access-frequency promotion (`temnion-runtime`) |
 | M11 | Filters/compressed execution | T07 | Zone maps, entity Bloom filters, and storage predicate pushdown block skipping (`temnion-index`, `temnion-storage`) |
 | M12 | Hierarchical summaries | T07 | Block and segment summaries, binary TNSM framing, and companion TSM segment exports (`temnion-index`, `temnion-storage`) |
 | M13 | Branching timelines | T05 | Structurally shared timeline branching and persistent DAG manifests (`temnion-branch`) |

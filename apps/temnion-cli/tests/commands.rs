@@ -41,6 +41,9 @@ fn capabilities_do_not_advertise_unimplemented_features() {
     assert!(text.contains("\"hierarchical-summaries\""));
     assert!(text.contains("\"nd-layouts\""));
     assert!(text.contains("\"alternate-projections\""));
+    assert!(text.contains("\"virtual-shards\""));
+    assert!(text.contains("\"background-dag\""));
+    assert!(text.contains("\"storage-hierarchy\""));
 }
 
 #[test]

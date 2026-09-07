@@ -8,7 +8,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, and carefully gated evolution. Tzeentch is a planned
 first consumer, not a dependency of the database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, and alternate projections.**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, and storage hierarchy.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery
 > and immutable TSF exports. `temnion-replay` provides checksummed checkpoints and
@@ -18,7 +18,8 @@ first consumer, not a dependency of the database core.
 > `temnion-causal` provides CSR-packed causal graphs and bidirectional DAG tracing.
 > `temnion-index` provides hierarchical summaries, clock-scoped zone maps, entity
 > Bloom filters, Morton 2D/3D space-filling curves, and zero-payload-duplication
-> alternate projections.
+> alternate projections. `temnion-runtime` provides single-writer virtual-shard
+> partitioning, priority background task DAG scheduling, and tiered storage management.
 
 ## What works now
 
@@ -35,6 +36,7 @@ first consumer, not a dependency of the database core.
 | `temnion-replay` | Deterministic reconstruction, periodic atomic checkpoints (TNCP), SplitMix64 step-counted PRNG tracking and bit-for-bit replay equivalence |
 | `temnion-branch` | Structurally shared timeline branching, zero-payload-duplication forks, atomic manifest updates (TNBM), lifecycle states, and interval timeline resolution |
 | `temnion-causal` | First-class causal graph (TNCG), CSR-packed flat indexing, bidirectional immediate queries, transitive causal/effect cone tracing, topological sort, and cycle detection |
+| `temnion-runtime` | Single-writer virtual shards, routing policies, deterministic total-order merge, priority-weighted background task DAG with Kahn cycle prevention and pressure throttling, and three-tier storage hierarchy with LRU eviction and auto-promotion |
 | `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, and `causal-trace` commands |
 | `temnion-bench` | Seeded A/B/D in-memory baselines and a separate OS-synchronized on-disk batch/reference workload |
 
