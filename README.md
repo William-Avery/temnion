@@ -20,6 +20,8 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, carefully gated evolution, and decoupled consumer integration.
 Tzeentch is an integrated first consumer, fully decoupled from the deterministic database core.
 
+> 📖 **Developer Documentation**: Read the [**Official Temnion How-To Guide**](docs/HOW_TO_GUIDE.md) — comprehensive guide covering installation wizards, daemon operations, connections, CLI, Studio Workbench IDE, and SQL/TemQL query reference.
+
 > **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), Epistemic Knowledge Store (EKS), deterministic transformations, canonical IR e-graphs, isolated measured evolution, model-agnostic Tzeentch consumer adapter, multi-cadence timing, desktop Temnion Studio with Tzeentch Explorer, scale/lifecycle release qualification (R1–R6, M01–M44 complete), and standalone background daemon (`temniond`) with systemd and Windows Service integrations.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery,
