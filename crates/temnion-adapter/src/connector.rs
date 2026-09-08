@@ -179,10 +179,8 @@ impl ConnectionConfig {
                     }
                     "database" | "database_name" => config.database = val.to_string(),
                     "username" | "admin_user" => config.username = val.to_string(),
-                    "auth_token" | "password" => {
-                        if !val.is_empty() {
-                            config.auth_token = Some(val.to_string());
-                        }
+                    "auth_token" | "password" if !val.is_empty() => {
+                        config.auth_token = Some(val.to_string());
                     }
                     _ => {}
                 }
