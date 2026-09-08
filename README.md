@@ -20,7 +20,7 @@ adds durable history, deterministic reconstruction, derived knowledge (EKS),
 versioned transformations, carefully gated evolution, and decoupled consumer integration.
 Tzeentch is an integrated first consumer, fully decoupled from the deterministic database core.
 
-> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), Epistemic Knowledge Store (EKS), deterministic transformations, canonical IR e-graphs, isolated measured evolution, model-agnostic Tzeentch consumer adapter, multi-cadence timing, desktop Temnion Studio with Tzeentch Explorer, and scale/lifecycle release qualification (R1–R6, M01–M44 complete).**
+> **Current status: packed state, typed scalar schemas, durable logs, deterministic replay, lossless codecs, branching timelines, causal DAG tracing, hierarchical summaries, Morton N-D layouts, alternate projections, virtual shards, background task DAG, storage hierarchy, typed query IR, TemQL, compact Tem, SQL, TNP wire protocol, local IPC, Arrow columnar layout, C ABI, Arrow Flight, Model Context Protocol (MCP), Epistemic Knowledge Store (EKS), deterministic transformations, canonical IR e-graphs, isolated measured evolution, model-agnostic Tzeentch consumer adapter, multi-cadence timing, desktop Temnion Studio with Tzeentch Explorer, scale/lifecycle release qualification (R1–R6, M01–M44 complete), and standalone background daemon (`temniond`) with systemd and Windows Service integrations.**
 > `EventLog<T>` remains volatile. `temnion-storage::Store` persists checked WAL
 > batches and acknowledges only after OS synchronization, with explicit recovery,
 > immutable TSF exports, retention policies with causal reference holds, and CRC32 point-in-time backup/restore. `temnion-replay` provides checksummed checkpoints and
@@ -46,6 +46,7 @@ Tzeentch is an integrated first consumer, fully decoupled from the deterministic
 > adaptive lifecycle evaluators, and immutable Constitution hardening.
 > `temnion-adapter` provides the decoupled consumer adapter, content-addressed media references (`MediaRef`),
 > bounded mirror writes with zero silent drops, multi-timescale cadence scheduling, and causal action trace introspection.
+> `temniond` provides the standalone background service daemon hosting TNP, Flight, and MCP endpoints, accompanied by Linux `systemd` and Windows Service integrations and release packaging automation.
 
 ## What works now
 
@@ -71,6 +72,7 @@ Tzeentch is an integrated first consumer, fully decoupled from the deterministic
 | `temnion-transform` | Deterministic transformation engine with versioned manifests, typed signatures, CPU/memory resource metering, immutable lineage logs, and canonical query IR e-graph optimizer with equality saturation, constant folding, and cycle-safe plan extraction |
 | `temnion-evolution` | Isolated measured evolution engine (`EvolutionEngine`, `ChampionChallengerRegistry`), adaptive physical memory and lifecycle evaluators, semantic/vector projection index (`SemanticProjectionIndex`), gated meta-evolution (`MutationPolicy`), and runtime immutable Constitution hardening (`Constitution`, 8 axioms, `ConstitutionAudit`) |
 | `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), and causal action tracer (`TzeentchActionTracer`) with explicit `SourceGap` nodes and zero future leakage |
+| `temniond` | Standalone background service daemon hosting TNP (`:9180`), Arrow Flight (`:9181`), and MCP endpoints with TOML configuration (`DaemonConfig`), periodic maintenance thread, Linux systemd unit, and Windows Service automation scripts |
 | `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, `rewrite-demo`, `evolve`, `tzeentch`, and `benchmark scale` commands |
 | `temnion-studio` | Tauri 2 + React/TypeScript desktop client using TanStack Query/Table for local open/create, query, EXPLAIN, history, append, branch inspection, causal-trace flows, and dedicated Tzeentch Explorer with live cadence monitors, migration mode toggle, and causal action trace graph |
 | `temnion-bench` | In-memory baselines, durable on-disk batch workloads, multi-cadence scale harness (4K, 64K, 1M+ active records), and retention lifecycle stress harness |
@@ -81,8 +83,7 @@ Startup scans the authoritative WAL.
 Exports currently retain that WAL. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**Still unfinished:** manifest-based WAL retirement,
-standalone `temniond` daemon, and native platform packaging (deb/rpm/msi).
+**Still unfinished:** manifest-based WAL retirement and native platform installer packages (deb/rpm/msi).
 
 ## Quick start
 

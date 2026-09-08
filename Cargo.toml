@@ -23,6 +23,7 @@ members = [
     "crates/temnion-adapter",
     "crates/temnion-bench",
     "apps/temnion-cli",
+    "apps/temniond",
 ]
 
 [workspace.package]

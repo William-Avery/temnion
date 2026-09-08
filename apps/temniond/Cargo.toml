@@ -1,0 +1,27 @@
+[package]
+name = "temniond"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "The background service daemon for Temnion"
+
+[[bin]]
+name = "temniond"
+path = "src/main.rs"
+
+[dependencies]
+temnion-core.workspace = true
+temnion-storage.workspace = true
+temnion-format.workspace = true
+temnion-query.workspace = true
+temnion-protocol.workspace = true
+temnion-flight.workspace = true
+temnion-mcp.workspace = true
+temnion-runtime.workspace = true
+temnion-branch.workspace = true
+temnion-adapter.workspace = true
+
+[lints]
+workspace = true

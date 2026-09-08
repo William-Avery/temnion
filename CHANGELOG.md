@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased - Standalone daemon and operational lifecycle (Post-R6)
+
+- Added Standalone Daemon Application (`apps/temniond`):
+  - **Multi-Protocol Daemon Binary (`temniond`):** Always-on background database service hosting high-performance binary TNP wire protocol over TCP sockets (`127.0.0.1:9180`), Arrow Flight analytical service (`127.0.0.1:9181`), and Model Context Protocol (MCP) control-plane endpoints.
+  - **Thread-Safe Architecture:** Pure safe Rust concurrency model under `#![forbid(unsafe_code)]` with `Arc<Mutex<TnpServer>>`, worker connection threads, atomic shutdown coordination, and background maintenance worker for periodic checkpointing.
+  - **Daemon Commands:** `run` (foreground / service execution with graceful `Ctrl+C` termination and WAL flush), `init` (store creation and configuration template generation), `status` (zero-downtime TNP health and statistics probe), and `version`.
+  - **Configuration Management:** Robust line-by-line TOML configuration parser and generator (`DaemonConfig`, `temnion.example.toml`).
+- Service Definitions and Production Hardening (`services/`):
+  - **Linux systemd Unit (`services/systemd/temniond.service`):** Production service definition with `Type=simple`, `Restart=on-failure`, `LimitNOFILE=65536`, and strict sandboxing (`ProtectSystem=strict`, `ProtectHome=true`, `ReadWritePaths=/var/lib/temnion`, `NoNewPrivileges=true`).
+  - **Windows Service Automation (`services/windows/`):** PowerShell administration scripts (`install-service.ps1` and `uninstall-service.ps1`) for registering, configuring automatic failure recovery, and managing `temniond.exe` as a managed Windows Service.
+- Distribution Packaging (`scripts/`):
+  - Added release packaging automation (`scripts/package-release.ps1`) building release binaries (`tem`, `temniond`), collecting service units and configuration templates, and creating distribution archives with NIST SHA-256 checksums.
+- Published ADR 0015 (`docs/adr/0015-standalone-daemon-and-operational-lifecycle.md`) documenting daemon architecture, multi-protocol hosting, and operational lifecycle.
+
 ## Unreleased - Tzeentch integration and release qualification (M39–M44, R6)
 
 - Added Tzeentch Adapter crate (`temnion-adapter`) (M39–M40):
