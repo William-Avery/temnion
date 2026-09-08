@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type ColumnDef,
   flexRender,
@@ -35,8 +35,9 @@ import {
   testConnection,
   traceCausality,
 } from "./api";
+import { GuidePanel } from "./Guide";
 
-type View = "query" | "history" | "causality" | "schemas" | "ingest" | "connections" | "metrics";
+type View = "guide" | "query" | "history" | "causality" | "schemas" | "ingest" | "connections" | "metrics";
 type QueryFormat = "temql" | "compact" | "sql";
 
 const samples: Record<QueryFormat, string> = {
@@ -46,13 +47,14 @@ const samples: Record<QueryFormat, string> = {
 };
 
 const navItems: Array<{ id: View; label: string; icon: string; group: string }> = [
-  { id: "query", label: "Query Studio", icon: "⌁", group: "Explore" },
-  { id: "history", label: "Temporal Plane", icon: "◴", group: "Explore" },
-  { id: "causality", label: "Branches & Causality", icon: "⑂", group: "Explore" },
-  { id: "schemas", label: "Schema & Entity Catalog", icon: "⊞", group: "Explore" },
-  { id: "ingest", label: "Ingestion Console", icon: "⇧", group: "Data" },
-  { id: "connections", label: "Connections Manager", icon: "◎", group: "Operate" },
-  { id: "metrics", label: "Storage & Capabilities", icon: "▥", group: "Operate" },
+  { id: "guide", label: "How-To Guide", icon: "📖", group: "Learn & Docs" },
+  { id: "query", label: "Query Studio", icon: "⚡", group: "Workbench" },
+  { id: "schemas", label: "Schema Catalog", icon: "⊞", group: "Workbench" },
+  { id: "history", label: "Temporal Plane", icon: "◴", group: "Workbench" },
+  { id: "causality", label: "Branches & DAG", icon: "⑂", group: "Workbench" },
+  { id: "connections", label: "Connections", icon: "◎", group: "Operate" },
+  { id: "ingest", label: "Ingestion Console", icon: "⇧", group: "Operate" },
+  { id: "metrics", label: "Storage & Health", icon: "▥", group: "Operate" },
 ];
 
 function formatBytes(bytes: number): string {
@@ -85,7 +87,7 @@ function Logo() {
 }
 
 function Sidebar({ view, onChange }: { view: View; onChange: (view: View) => void }) {
-  const groups = ["Explore", "Data", "Operate"];
+  const groups = ["Learn & Docs", "Workbench", "Operate"];
   return (
     <nav className="studio-sidebar" aria-label="Studio sections">
       {groups.map((group) => (
@@ -213,9 +215,47 @@ function PanelHeader({ title, subtitle, action }: { title: string; subtitle: str
   );
 }
 
-function QueryPanel({ connected }: { connected: boolean }) {
-  const [format, setFormat] = useState<QueryFormat>("temql");
-  const [query, setQuery] = useState(samples.temql);
+interface QueryPanelProps {
+  connected: boolean;
+  initialQuery?: string;
+  onNavigateToGuide: () => void;
+  onNavigateToConnections: () => void;
+}
+
+const queryPresets = [
+  {
+    label: "Basic Scan (SQL)",
+    fmt: "sql" as QueryFormat,
+    text: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 25",
+  },
+  {
+    label: "Time Travel Flashback (SQL)",
+    fmt: "sql" as QueryFormat,
+    text: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nAS OF SYSTEM_TIME '2026-09-08T00:00:00Z'\nLIMIT 50",
+  },
+  {
+    label: "Physical Range (SQL)",
+    fmt: "sql" as QueryFormat,
+    text: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nBETWEEN PHYSICAL 1757300000000000000 AND 1757305000000000000\nLIMIT 50",
+  },
+  {
+    label: "TemQL Pipeline",
+    fmt: "temql" as QueryFormat,
+    text: "FROM temnion\nWHERE sequence > 0\nSELECT entity, schema, valid_time, known_time, sequence\nORDER BY sequence DESC\nLIMIT 25",
+  },
+];
+
+function QueryPanel({
+  connected,
+  initialQuery,
+  onNavigateToGuide,
+  onNavigateToConnections,
+}: QueryPanelProps) {
+  const [format, setFormat] = useState<QueryFormat>(() => {
+    if (initialQuery?.trim().toUpperCase().startsWith("SELECT")) return "sql";
+    return "temql";
+  });
+  const [query, setQuery] = useState(initialQuery ?? samples.temql);
   const [maxRows, setMaxRows] = useState(100);
   const [bookmarks, setBookmarks] = useState<string[]>(() => {
     try {
@@ -224,6 +264,18 @@ function QueryPanel({ connected }: { connected: boolean }) {
       return [];
     }
   });
+
+  useEffect(() => {
+    if (initialQuery) {
+      setQuery(initialQuery);
+      if (initialQuery.trim().toUpperCase().startsWith("SELECT")) {
+        setFormat("sql");
+      } else if (initialQuery.trim().toUpperCase().startsWith("FROM")) {
+        setFormat("temql");
+      }
+    }
+  }, [initialQuery]);
+
   const run = useMutation({ mutationFn: () => executeQuery(query, maxRows) });
   const explain = useMutation({ mutationFn: () => explainQuery(query) });
 
@@ -260,7 +312,58 @@ function QueryPanel({ connected }: { connected: boolean }) {
           </div>
         }
       />
+
+      {/* Quickstart Hero Card */}
+      <div className="quickstart-hero">
+        <div className="quickstart-text">
+          <h3>Interactive Temporal Query Studio</h3>
+          <p>
+            Execute SQL or native TemQL queries across physical wall-clock time, Lamport sequences, and causal branch DAGs. All operations are bounded and verified memory-safe under <code>#![forbid(unsafe_code)]</code>.
+          </p>
+        </div>
+        <div className="quickstart-actions">
+          <button className="btn btn-secondary btn-sm" onClick={onNavigateToGuide} type="button">
+            📖 How-To Guide
+          </button>
+          <button className="btn btn-secondary btn-sm" onClick={onNavigateToConnections} type="button">
+            ◎ Connections
+          </button>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              setFormat("sql");
+              setQuery(queryPresets[1].text);
+              run.mutate();
+            }}
+            type="button"
+          >
+            ⚡ Run Time Travel Demo
+          </button>
+        </div>
+      </div>
+
       {!connected && <Notice>Connect an existing database or create one before executing queries.</Notice>}
+
+      {/* Query Presets Chips */}
+      <div className="query-presets-bar">
+        <span className="presets-label">Sample Presets:</span>
+        {queryPresets.map((p) => (
+          <button
+            className="preset-chip"
+            key={p.label}
+            onClick={() => {
+              setFormat(p.fmt);
+              setQuery(p.text);
+              run.reset();
+              explain.reset();
+            }}
+            type="button"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+
       <div className="editor-container glass-card">
         <div className="editor-toolbar">
           <div className="toolbar-left">
@@ -311,6 +414,7 @@ function QueryPanel({ connected }: { connected: boolean }) {
             <span><strong>{formatBytes(run.data?.bytesRead ?? 0)}</strong> read</span>
             <span>•</span>
             <span>{((run.data?.elapsedMicros ?? 0) / 1_000).toFixed(2)} ms</span>
+            <span className="stat-pill safety">forbid(unsafe_code)</span>
             {run.data?.truncated && <span className="badge badge-warning">Truncated</span>}
           </div>
         </div>
@@ -1004,19 +1108,51 @@ function MetricsPanel({ status }: { status: EngineStatus }) {
 }
 
 export function App() {
-  const [view, setView] = useState<View>("query");
+  const [view, setView] = useState<View>("guide");
+  const [querySnippet, setQuerySnippet] = useState<string | undefined>(undefined);
   const statusQuery = useQuery({ queryKey: ["engine-status"], queryFn: getEngineStatus, initialData: browserStatus });
   const status = statusQuery.data;
 
+  const handleNavigate = (targetView: View, snippet?: string) => {
+    if (snippet) {
+      setQuerySnippet(snippet);
+    }
+    setView(targetView);
+  };
+
   let content: React.ReactNode;
   switch (view) {
-    case "query": content = <QueryPanel connected={status.connected} />; break;
-    case "history": content = <HistoryPanel connected={status.connected} eventCount={status.eventCount} />; break;
-    case "causality": content = <CausalityPanel connected={status.connected} eventCount={status.eventCount} />; break;
-    case "schemas": content = <SchemaPanel />; break;
-    case "ingest": content = <IngestPanel connected={status.connected} />; break;
-    case "connections": content = <ConnectionsPanel status={status} />; break;
-    case "metrics": content = <MetricsPanel status={status} />; break;
+    case "guide":
+      content = <GuidePanel onNavigate={handleNavigate} />;
+      break;
+    case "query":
+      content = (
+        <QueryPanel
+          connected={status.connected}
+          initialQuery={querySnippet}
+          onNavigateToConnections={() => setView("connections")}
+          onNavigateToGuide={() => setView("guide")}
+        />
+      );
+      break;
+    case "history":
+      content = <HistoryPanel connected={status.connected} eventCount={status.eventCount} />;
+      break;
+    case "causality":
+      content = <CausalityPanel connected={status.connected} eventCount={status.eventCount} />;
+      break;
+    case "schemas":
+      content = <SchemaPanel />;
+      break;
+    case "ingest":
+      content = <IngestPanel connected={status.connected} />;
+      break;
+    case "connections":
+      content = <ConnectionsPanel status={status} />;
+      break;
+    case "metrics":
+      content = <MetricsPanel status={status} />;
+      break;
   }
 
   return (
@@ -1024,7 +1160,12 @@ export function App() {
       <header className="studio-header">
         <Logo />
         <div className="header-status">
-          <div className={`status-chip ${status.connected ? "connected" : ""}`}>
+          <div
+            className={`status-chip ${status.connected ? "connected" : ""}`}
+            onClick={() => setView("connections")}
+            style={{ cursor: "pointer" }}
+            title="Click to manage database connections"
+          >
             <span className="pulse-dot" />
             <span>{status.connected ? `Connected · ${status.eventCount} events` : "No database connected"}</span>
           </div>
@@ -1032,11 +1173,26 @@ export function App() {
           <div className="status-chip mode-chip">TNP Port 9180</div>
         </div>
         <div className="header-actions">
-          <button className="btn btn-secondary btn-sm" onClick={() => setView("connections")} type="button">
-            {status.connected ? "Manage Connections" : "Connect"}
+          <button
+            className={`btn ${view === "guide" ? "btn-primary" : "btn-secondary"} btn-sm`}
+            onClick={() => setView("guide")}
+            type="button"
+          >
+            📖 How-To Guide
           </button>
-          <button className="btn btn-primary btn-sm" onClick={() => setView("query")} type="button">
-            Query Studio
+          <button
+            className={`btn ${view === "query" ? "btn-primary" : "btn-secondary"} btn-sm`}
+            onClick={() => setView("query")}
+            type="button"
+          >
+            ⚡ Query Studio
+          </button>
+          <button
+            className={`btn ${view === "connections" ? "btn-primary" : "btn-secondary"} btn-sm`}
+            onClick={() => setView("connections")}
+            type="button"
+          >
+            ◎ Connections
           </button>
         </div>
       </header>

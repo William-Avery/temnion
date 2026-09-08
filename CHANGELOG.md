@@ -1,5 +1,16 @@
 # Changelog
 
+## Unreleased - Comprehensive How-To Guide and Temnion Studio Website Overhaul
+
+- **Authoritative How-To Guide (`docs/HOW_TO_GUIDE.md`):**
+  - Created a comprehensive, Microsoft Learn / React.dev-style developer guide covering everything from introduction and multi-clock mental model to component installation wizards, background daemon management, connection strings, CLI workflows, Studio Workbench exploration, SQL/TemQL query language reference, decoupled Tzeentch client, and manifest-guarded WAL durability.
+- **In-App Interactive Documentation Portal (`apps/temnion-studio/src/Guide.tsx`):**
+  - Integrated the full guide into the web application with interactive chapter navigation, platform tab switchers (Windows PowerShell, Linux/macOS Bash, Rust Cargo), copyable code blocks with visual feedback, and direct action buttons into Query Studio and Connections Manager.
+- **Website Navigation & Information Architecture Cleanup (`apps/temnion-studio`):**
+  - Reorganized the navigation sidebar into three intuitive sections: **Learn & Docs** (How-To Guide), **Workbench** (Query Studio, Schema Catalog, Temporal Plane, Branches & DAG), and **Operate** (Connections Manager, Ingestion Console, Storage & Health).
+  - Modernized the top header with prominent navigation buttons and interactive connection status chips.
+  - Enhanced Query Studio with a welcoming Quickstart Hero card, one-click sample query presets (`Basic Scan`, `Time Travel Flashback`, `Physical Range`, `TemQL Pipeline`), and execution metrics badges.
+
 ## Unreleased - Decoupled Tzeentch Client, Database Connector, and Component Installer
 
 - **Decoupled Tzeentch Side-Program (`crates/temnion-adapter`):**
