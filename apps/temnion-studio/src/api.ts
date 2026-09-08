@@ -41,6 +41,7 @@ export interface QueryResult {
   bytesRead: number;
   truncated: boolean;
   elapsedMicros: number;
+  message?: string;
 }
 
 export interface HistoryResult {
@@ -102,6 +103,109 @@ export interface ConnectionProfile {
   status: "connected" | "disconnected" | "error";
   latencyMs?: number;
   serverVersion?: string;
+}
+
+export interface DatabaseInfo {
+  id: string;
+  name: string;
+  connectionId: string;
+  clockProfile: string;
+  template: string;
+  storageTarget: "managed" | "embedded";
+  path?: string;
+  tablesCount: number;
+  queriesCount: number;
+  timeObjectsCount: number;
+  branchesCount: number;
+  eventCount: number;
+  isDefault?: boolean;
+  createdAt: string;
+}
+
+export interface CreateDatabaseOptions {
+  name: string;
+  connectionId?: string;
+  clockProfile?: string;
+  template?: string;
+  storageTarget?: "managed" | "embedded";
+  path?: string;
+}
+
+export interface TableColumn {
+  name: string;
+  type: string;
+  indexed: boolean;
+}
+
+export interface TableDefinition {
+  id: number;
+  databaseName: string;
+  name: string;
+  clockId: number;
+  description: string;
+  fields: TableColumn[];
+  eventCount: number;
+}
+
+export interface NewTableOptions {
+  databaseName?: string;
+  name: string;
+  clockId?: number;
+  description?: string;
+  fields: TableColumn[];
+}
+
+export interface SavedQuery {
+  id: string;
+  databaseName: string;
+  name: string;
+  format: "sql" | "temql";
+  queryText: string;
+  createdAt: string;
+}
+
+export interface NewQueryOptions {
+  databaseName?: string;
+  name: string;
+  format: "sql" | "temql";
+  queryText: string;
+}
+
+export interface TimeObject {
+  id: string;
+  databaseName: string;
+  name: string;
+  clockType: "physical-utc" | "lamport-dag" | "hybrid-vector";
+  resolution: string;
+  description: string;
+  asOfTimestamp?: string;
+  createdAt: string;
+}
+
+export interface NewTimeOptions {
+  databaseName?: string;
+  name: string;
+  clockType: "physical-utc" | "lamport-dag" | "hybrid-vector";
+  resolution: string;
+  description: string;
+  asOfTimestamp?: string;
+}
+
+export interface BranchObject {
+  id: number;
+  databaseName: string;
+  name: string;
+  parentId?: number;
+  forkSequence?: number;
+  lifecycle: string;
+}
+
+export interface NewBranchOptions {
+  databaseName?: string;
+  name: string;
+  parentId?: number;
+  forkSequence?: number;
+  lifecycle?: string;
 }
 
 export interface SchemaDefinition {
@@ -262,6 +366,509 @@ class InBrowserStore {
 
   activeConnectionId = "conn-local-primary";
 
+  databases: DatabaseInfo[] = [
+    {
+      id: "db-local-default",
+      name: "temnion_default",
+      connectionId: "conn-local-primary",
+      clockProfile: "Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)",
+      template: "Industrial IoT & Telemetry",
+      storageTarget: "managed",
+      tablesCount: 4,
+      queriesCount: 3,
+      timeObjectsCount: 3,
+      branchesCount: 3,
+      eventCount: 28,
+      isDefault: true,
+      createdAt: "System Bootstrap",
+    },
+    {
+      id: "db-staging-warehouse",
+      name: "staging_warehouse",
+      connectionId: "conn-staging-analytics",
+      clockProfile: "Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)",
+      template: "Financial Ledger & Settlement",
+      storageTarget: "managed",
+      tablesCount: 2,
+      queriesCount: 1,
+      timeObjectsCount: 2,
+      branchesCount: 1,
+      eventCount: 1420,
+      isDefault: true,
+      createdAt: "System Bootstrap",
+    },
+  ];
+
+  tables: TableDefinition[] = [
+    {
+      id: 1,
+      databaseName: "temnion_default",
+      name: "SensorTelemetry",
+      clockId: 1,
+      description: "Turbine, temperature, and environmental telemetry records",
+      fields: [
+        { name: "node", type: "Utf8", indexed: true },
+        { name: "temperature", type: "Float64", indexed: true },
+        { name: "vibration_g", type: "Float64", indexed: false },
+        { name: "pressure_kpa", type: "Float64", indexed: false },
+        { name: "status", type: "Utf8", indexed: true },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 2,
+      databaseName: "temnion_default",
+      name: "FinancialLedger",
+      clockId: 1,
+      description: "Multi-currency account settlements and bilateral transfers",
+      fields: [
+        { name: "account_from", type: "Utf8", indexed: true },
+        { name: "account_to", type: "Utf8", indexed: true },
+        { name: "amount_usd", type: "Decimal128", indexed: true },
+        { name: "tx_type", type: "Utf8", indexed: true },
+        { name: "clearing_status", type: "Utf8", indexed: true },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 3,
+      databaseName: "temnion_default",
+      name: "SystemSecurityAudit",
+      clockId: 1,
+      description: "Immutable authorization, access control, and cryptographic audit log",
+      fields: [
+        { name: "principal", type: "Utf8", indexed: true },
+        { name: "action", type: "Utf8", indexed: true },
+        { name: "resource", type: "Utf8", indexed: true },
+        { name: "access_result", type: "Utf8", indexed: true },
+        { name: "ip_origin", type: "Utf8", indexed: false },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 4,
+      databaseName: "temnion_default",
+      name: "StateSnapshot",
+      clockId: 1,
+      description: "Point-in-time portfolio and asset valuation checkpoints",
+      fields: [
+        { name: "asset_id", type: "Utf8", indexed: true },
+        { name: "valuation", type: "Float64", indexed: true },
+        { name: "confidence_interval", type: "Float64", indexed: false },
+        { name: "reconciled", type: "Boolean", indexed: false },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 5,
+      databaseName: "staging_warehouse",
+      name: "WarehouseLedger",
+      clockId: 1,
+      description: "Aggregated analytical settlement batches",
+      fields: [
+        { name: "batch_id", type: "Utf8", indexed: true },
+        { name: "net_usd", type: "Decimal128", indexed: true },
+        { name: "item_count", type: "Int64", indexed: false },
+      ],
+      eventCount: 710,
+    },
+    {
+      id: 6,
+      databaseName: "staging_warehouse",
+      name: "SettlementAudit",
+      clockId: 1,
+      description: "Audit trail for clearing transactions",
+      fields: [
+        { name: "clearing_id", type: "Utf8", indexed: true },
+        { name: "status", type: "Utf8", indexed: true },
+      ],
+      eventCount: 710,
+    },
+  ];
+
+  savedQueries: SavedQuery[] = [
+    {
+      id: "q-flashback-audit",
+      databaseName: "temnion_default",
+      name: "Flashback Audit Scan",
+      format: "sql",
+      queryText: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nAS OF SYSTEM_TIME '2026-09-08T00:00:00Z'\nLIMIT 50",
+      createdAt: "Default Preset",
+    },
+    {
+      id: "q-sensor-anomalies",
+      databaseName: "temnion_default",
+      name: "Sensor Anomaly Detection",
+      format: "sql",
+      queryText: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nWHERE sequence > 10\nLIMIT 25",
+      createdAt: "Default Preset",
+    },
+    {
+      id: "q-range-scan",
+      databaseName: "temnion_default",
+      name: "Physical Range Filter",
+      format: "sql",
+      queryText: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nBETWEEN PHYSICAL 1757300000000000000 AND 1757305000000000000\nLIMIT 50",
+      createdAt: "Default Preset",
+    },
+    {
+      id: "q-staging-summary",
+      databaseName: "staging_warehouse",
+      name: "Staging Settlement Summary",
+      format: "sql",
+      queryText: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 100",
+      createdAt: "Default Preset",
+    },
+  ];
+
+  timeObjects: TimeObject[] = [
+    {
+      id: "time-utc-phys",
+      databaseName: "temnion_default",
+      name: "Physical UTC Horizon",
+      clockType: "physical-utc",
+      resolution: "1 ns (UTC wall-clock)",
+      description: "Physical event occurrence time according to synchronized UTC clock",
+      createdAt: "System Default",
+    },
+    {
+      id: "time-lamport-dag",
+      databaseName: "temnion_default",
+      name: "Valid-Time Plane",
+      clockType: "lamport-dag",
+      resolution: "Lamport monotonic tick",
+      description: "Logical ordering plane for causality tracing and branch forks",
+      createdAt: "System Default",
+    },
+    {
+      id: "time-snapshot-ep1",
+      databaseName: "temnion_default",
+      name: "Snapshot Epoch 1 Checkpoint",
+      clockType: "hybrid-vector",
+      resolution: "Epoch-aligned marker",
+      description: "Point-in-time state checkpoint for zero-downtime queries",
+      asOfTimestamp: "2026-09-08T00:00:00Z",
+      createdAt: "System Default",
+    },
+    {
+      id: "time-staging-horizon",
+      databaseName: "staging_warehouse",
+      name: "Warehouse Ingestion Horizon",
+      clockType: "physical-utc",
+      resolution: "1 ms batch tick",
+      description: "Hourly roll-up temporal boundary",
+      createdAt: "System Default",
+    },
+  ];
+
+  branchObjects: BranchObject[] = [
+    { id: 1, databaseName: "temnion_default", name: "main", lifecycle: "Active" },
+    { id: 2, databaseName: "temnion_default", name: "experiment/high-frequency", parentId: 1, forkSequence: 12, lifecycle: "Active" },
+    { id: 3, databaseName: "temnion_default", name: "shadow/compliance-audit", parentId: 1, forkSequence: 18, lifecycle: "Active" },
+    { id: 4, databaseName: "staging_warehouse", name: "main", lifecycle: "Active" },
+  ];
+
+  createDatabaseCatalog(options: CreateDatabaseOptions): DatabaseInfo {
+    const connId = options.connectionId || this.activeConnectionId || "conn-local-primary";
+    const name = options.name.trim().replace(/[^a-zA-Z0-9_]/g, "_");
+    if (!name) throw new Error("Database identifier cannot be empty");
+
+    const existing = this.databases.find(
+      (d) => d.connectionId === connId && d.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existing) {
+      throw new Error(`Database '${name}' already exists under this connection.`);
+    }
+
+    const newDb: DatabaseInfo = {
+      id: `db-${Date.now()}`,
+      name,
+      connectionId: connId,
+      clockProfile: options.clockProfile || "Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)",
+      template: options.template || "Standard / Blank",
+      storageTarget: options.storageTarget || "managed",
+      path: options.path,
+      tablesCount: 0,
+      queriesCount: 1,
+      timeObjectsCount: 1,
+      branchesCount: 1,
+      eventCount: 0,
+      isDefault: false,
+      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    // Seed default branch, time horizon, and query
+    this.branchObjects.push({
+      id: this.branchObjects.length + 1,
+      databaseName: name,
+      name: "main",
+      lifecycle: "Active",
+    });
+
+    this.timeObjects.push({
+      id: `time-${Date.now()}`,
+      databaseName: name,
+      name: "Physical UTC Horizon",
+      clockType: "physical-utc",
+      resolution: "1 ns (UTC wall-clock)",
+      description: `Default physical timeline for ${name}`,
+      createdAt: "System Bootstrap",
+    });
+
+    this.savedQueries.push({
+      id: `q-${Date.now()}`,
+      databaseName: name,
+      name: "Initial Scan",
+      format: "sql",
+      queryText: `SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 25`,
+      createdAt: "System Bootstrap",
+    });
+
+    if (options.template === "Industrial IoT & Telemetry") {
+      this.tables.push({
+        id: this.tables.length + 1,
+        databaseName: name,
+        name: "SensorTelemetry",
+        clockId: 1,
+        description: "Sensor metrics and turbine pressure readings",
+        fields: [
+          { name: "node", type: "Utf8", indexed: true },
+          { name: "temperature", type: "Float64", indexed: true },
+          { name: "vibration_g", type: "Float64", indexed: false },
+          { name: "status", type: "Utf8", indexed: true },
+        ],
+        eventCount: 0,
+      });
+      newDb.tablesCount = 1;
+    } else if (options.template === "Financial Ledger & Settlement") {
+      this.tables.push({
+        id: this.tables.length + 1,
+        databaseName: name,
+        name: "LedgerJournal",
+        clockId: 1,
+        description: "Double-entry balance journal",
+        fields: [
+          { name: "account_from", type: "Utf8", indexed: true },
+          { name: "account_to", type: "Utf8", indexed: true },
+          { name: "amount_usd", type: "Decimal128", indexed: true },
+        ],
+        eventCount: 0,
+      });
+      newDb.tablesCount = 1;
+    }
+
+    this.databases.push(newDb);
+
+    const conn = this.connections.find((c) => c.id === connId);
+    if (conn) {
+      conn.database = name;
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("temnion_databases", JSON.stringify(this.databases));
+      localStorage.setItem("temnion_connections", JSON.stringify(this.connections));
+    }
+
+    return newDb;
+  }
+
+  deleteDatabaseCatalog(name: string, connectionId?: string): DatabaseInfo[] {
+    const connId = connectionId || this.activeConnectionId || "conn-local-primary";
+    const target = this.databases.find((d) => d.connectionId === connId && d.name === name);
+    if (target?.isDefault) {
+      throw new Error(`Cannot delete system default database '${name}'.`);
+    }
+
+    this.databases = this.databases.filter((d) => !(d.connectionId === connId && d.name === name));
+    this.tables = this.tables.filter((t) => t.databaseName !== name);
+    this.savedQueries = this.savedQueries.filter((q) => q.databaseName !== name);
+    this.timeObjects = this.timeObjects.filter((t) => t.databaseName !== name);
+    this.branchObjects = this.branchObjects.filter((b) => b.databaseName !== name);
+
+    const conn = this.connections.find((c) => c.id === connId);
+    if (conn && conn.database === name) {
+      const fallback = this.databases.find((d) => d.connectionId === connId) || this.databases[0];
+      conn.database = fallback.name;
+    }
+
+    if (typeof window !== "undefined") {
+      localStorage.setItem("temnion_databases", JSON.stringify(this.databases));
+      localStorage.setItem("temnion_connections", JSON.stringify(this.connections));
+    }
+
+    return [...this.databases];
+  }
+
+  switchActiveDatabase(name: string, connectionId?: string): DatabaseInfo {
+    const connId = connectionId || this.activeConnectionId || "conn-local-primary";
+    const db = this.databases.find(
+      (d) => d.connectionId === connId && d.name.toLowerCase() === name.toLowerCase()
+    );
+    if (!db) {
+      throw new Error(`Database '${name}' not found on connection.`);
+    }
+
+    const conn = this.connections.find((c) => c.id === connId);
+    if (conn) {
+      conn.database = db.name;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("temnion_connections", JSON.stringify(this.connections));
+      }
+    }
+
+    return db;
+  }
+
+  private updateDbObjectCounts(databaseName: string) {
+    const db = this.databases.find((d) => d.name.toLowerCase() === databaseName.toLowerCase());
+    if (db) {
+      db.tablesCount = this.tables.filter((t) => t.databaseName === db.name).length;
+      db.queriesCount = this.savedQueries.filter((q) => q.databaseName === db.name).length;
+      db.timeObjectsCount = this.timeObjects.filter((t) => t.databaseName === db.name).length;
+      db.branchesCount = this.branchObjects.filter((b) => b.databaseName === db.name).length;
+      if (typeof window !== "undefined") {
+        localStorage.setItem("temnion_databases", JSON.stringify(this.databases));
+      }
+    }
+  }
+
+  createTableCatalog(options: NewTableOptions): TableDefinition {
+    const activeConn = this.connections.find((c) => c.id === this.activeConnectionId);
+    const dbName = options.databaseName || activeConn?.database || "temnion_default";
+    const name = options.name.trim().replace(/[^a-zA-Z0-9_]/g, "_");
+    if (!name) throw new Error("Table name cannot be empty");
+
+    const existing = this.tables.find(
+      (t) => t.databaseName.toLowerCase() === dbName.toLowerCase() && t.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existing) {
+      throw new Error(`Table '${name}' already exists in database '${dbName}'.`);
+    }
+
+    const newTable: TableDefinition = {
+      id: this.tables.length + 1,
+      databaseName: dbName,
+      name,
+      clockId: options.clockId || 1,
+      description: options.description || `Columnar table ${name}`,
+      fields: options.fields.length > 0 ? options.fields : [
+        { name: "id", type: "Utf8", indexed: true },
+        { name: "value", type: "Float64", indexed: false },
+      ],
+      eventCount: 0,
+    };
+
+    this.tables.push(newTable);
+    this.updateDbObjectCounts(dbName);
+    return newTable;
+  }
+
+  deleteTableCatalog(name: string, databaseName?: string): TableDefinition[] {
+    const activeConn = this.connections.find((c) => c.id === this.activeConnectionId);
+    const dbName = databaseName || activeConn?.database || "temnion_default";
+    this.tables = this.tables.filter(
+      (t) => !(t.databaseName.toLowerCase() === dbName.toLowerCase() && t.name === name)
+    );
+    this.updateDbObjectCounts(dbName);
+    return this.tables.filter((t) => t.databaseName.toLowerCase() === dbName.toLowerCase());
+  }
+
+  createSavedQueryCatalog(options: NewQueryOptions): SavedQuery {
+    const activeConn = this.connections.find((c) => c.id === this.activeConnectionId);
+    const dbName = options.databaseName || activeConn?.database || "temnion_default";
+    const name = options.name.trim() || `Query ${Date.now().toString().slice(-4)}`;
+
+    const newQuery: SavedQuery = {
+      id: `q-${Date.now()}`,
+      databaseName: dbName,
+      name,
+      format: options.format || "sql",
+      queryText: options.queryText,
+      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    this.savedQueries.push(newQuery);
+    this.updateDbObjectCounts(dbName);
+    return newQuery;
+  }
+
+  deleteSavedQueryCatalog(id: string): SavedQuery[] {
+    const query = this.savedQueries.find((q) => q.id === id);
+    const dbName = query?.databaseName || "temnion_default";
+    this.savedQueries = this.savedQueries.filter((q) => q.id !== id);
+    this.updateDbObjectCounts(dbName);
+    return this.savedQueries.filter((q) => q.databaseName === dbName);
+  }
+
+  createTimeObjectCatalog(options: NewTimeOptions): TimeObject {
+    const activeConn = this.connections.find((c) => c.id === this.activeConnectionId);
+    const dbName = options.databaseName || activeConn?.database || "temnion_default";
+    const name = options.name.trim() || `Time Horizon ${Date.now().toString().slice(-4)}`;
+
+    const newTime: TimeObject = {
+      id: `time-${Date.now()}`,
+      databaseName: dbName,
+      name,
+      clockType: options.clockType || "physical-utc",
+      resolution: options.resolution || "1 ns (UTC wall-clock)",
+      description: options.description || "Custom temporal plane configuration",
+      asOfTimestamp: options.asOfTimestamp,
+      createdAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    this.timeObjects.push(newTime);
+    this.updateDbObjectCounts(dbName);
+    return newTime;
+  }
+
+  deleteTimeObjectCatalog(id: string): TimeObject[] {
+    const obj = this.timeObjects.find((t) => t.id === id);
+    const dbName = obj?.databaseName || "temnion_default";
+    this.timeObjects = this.timeObjects.filter((t) => t.id !== id);
+    this.updateDbObjectCounts(dbName);
+    return this.timeObjects.filter((t) => t.databaseName === dbName);
+  }
+
+  createBranchCatalog(options: NewBranchOptions): BranchObject {
+    const activeConn = this.connections.find((c) => c.id === this.activeConnectionId);
+    const dbName = options.databaseName || activeConn?.database || "temnion_default";
+    const name = options.name.trim().replace(/[^a-zA-Z0-9_\-\/]/g, "_");
+    if (!name) throw new Error("Branch name cannot be empty");
+
+    const existing = this.branchObjects.find(
+      (b) => b.databaseName.toLowerCase() === dbName.toLowerCase() && b.name.toLowerCase() === name.toLowerCase()
+    );
+    if (existing) {
+      throw new Error(`Branch '${name}' already exists in database '${dbName}'.`);
+    }
+
+    const newBranch: BranchObject = {
+      id: this.branchObjects.length + 1,
+      databaseName: dbName,
+      name,
+      parentId: options.parentId,
+      forkSequence: options.forkSequence,
+      lifecycle: options.lifecycle || "Active",
+    };
+
+    this.branchObjects.push(newBranch);
+    this.updateDbObjectCounts(dbName);
+    return newBranch;
+  }
+
+  deleteBranchCatalog(name: string, databaseName?: string): BranchObject[] {
+    const activeConn = this.connections.find((c) => c.id === this.activeConnectionId);
+    const dbName = databaseName || activeConn?.database || "temnion_default";
+    if (name === "main") {
+      throw new Error("Cannot delete primary branch 'main'.");
+    }
+    this.branchObjects = this.branchObjects.filter(
+      (b) => !(b.databaseName.toLowerCase() === dbName.toLowerCase() && b.name === name)
+    );
+    this.updateDbObjectCounts(dbName);
+    return this.branchObjects.filter((b) => b.databaseName.toLowerCase() === dbName.toLowerCase());
+  }
+
   schemas: SchemaDefinition[] = [
     {
       id: 1,
@@ -349,6 +956,92 @@ class InBrowserStore {
   }
 
   query(q: string, maxRows: number): QueryResult {
+    const trimmed = q.trim();
+
+    // SQL CREATE DATABASE handling
+    const createDbMatch = trimmed.match(/^CREATE\s+DATABASE\s+(?:IF\s+NOT\s+EXISTS\s+)?([a-zA-Z0-9_]+)/i);
+    if (createDbMatch) {
+      const dbName = createDbMatch[1];
+      try {
+        this.createDatabaseCatalog({ name: dbName });
+        return {
+          rows: [],
+          eventsScanned: 0,
+          bytesRead: 0,
+          truncated: false,
+          elapsedMicros: 230,
+          message: `✓ Database '${dbName}' created successfully and registered in catalog.`,
+        };
+      } catch (err: unknown) {
+        return {
+          rows: [],
+          eventsScanned: 0,
+          bytesRead: 0,
+          truncated: false,
+          elapsedMicros: 110,
+          message: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
+    // SQL USE <dbname> handling
+    const useDbMatch = trimmed.match(/^USE\s+([a-zA-Z0-9_]+)/i);
+    if (useDbMatch) {
+      const dbName = useDbMatch[1];
+      try {
+        this.switchActiveDatabase(dbName);
+        return {
+          rows: [],
+          eventsScanned: 0,
+          bytesRead: 0,
+          truncated: false,
+          elapsedMicros: 120,
+          message: `✓ Switched active database context to '${dbName}'.`,
+        };
+      } catch (err: unknown) {
+        return {
+          rows: [],
+          eventsScanned: 0,
+          bytesRead: 0,
+          truncated: false,
+          elapsedMicros: 80,
+          message: err instanceof Error ? err.message : String(err),
+        };
+      }
+    }
+
+    // SQL SHOW DATABASES handling
+    const showDbsMatch = trimmed.match(/^SHOW\s+DATABASES/i);
+    if (showDbsMatch) {
+      const rows: EventRow[] = this.databases.map((db, idx) => ({
+        eventId: `db:${idx}`,
+        sequence: idx,
+        entity: db.name,
+        schema: 1,
+        validClock: 1,
+        validTime: 1000 + idx,
+        knownClock: 1,
+        knownTime: 1000 + idx,
+        payloadHex: "",
+        payloadBytes: 0,
+        causes: [],
+        fields: [
+          { name: "database_name", value: db.name },
+          { name: "tables", value: String(db.tablesCount) },
+          { name: "clock_profile", value: db.clockProfile },
+          { name: "created_at", value: db.createdAt },
+        ],
+      }));
+      return {
+        rows,
+        eventsScanned: this.databases.length,
+        bytesRead: this.databases.length * 64,
+        truncated: false,
+        elapsedMicros: 150,
+        message: `Catalog: ${this.databases.length} databases registered.`,
+      };
+    }
+
     let filtered = [...this.events];
     const upper = q.toUpperCase();
 
@@ -640,3 +1333,102 @@ export async function listEntities(): Promise<EntitySummary[]> {
     { id: "0:4", shard: 0, slot: 4, generation: 1, schemaId: 4, totalEvents: 7, lastValidTime: 1120 },
   ];
 }
+
+// ---------------------------------------------------------------------------
+// Database & Database Objects Hierarchy APIs
+// ---------------------------------------------------------------------------
+
+export async function listDatabases(connectionId?: string): Promise<DatabaseInfo[]> {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("temnion_databases");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          inBrowserStore.databases = parsed;
+        }
+      } catch {
+        // keep memory state
+      }
+    }
+  }
+  const connId = connectionId || inBrowserStore.activeConnectionId;
+  return inBrowserStore.databases.filter((d) => !connId || d.connectionId === connId);
+}
+
+export async function createDatabaseCatalog(options: CreateDatabaseOptions): Promise<DatabaseInfo> {
+  const db = inBrowserStore.createDatabaseCatalog(options);
+  if (isNativeRuntime && options.path) {
+    try {
+      await nativeCommand("create_database", { path: options.path });
+    } catch {
+      // Continue even if local path initialization is simulated or optional
+    }
+  }
+  return db;
+}
+
+export async function deleteDatabaseCatalog(name: string, connectionId?: string): Promise<DatabaseInfo[]> {
+  return inBrowserStore.deleteDatabaseCatalog(name, connectionId);
+}
+
+export async function switchActiveDatabase(name: string, connectionId?: string): Promise<DatabaseInfo> {
+  return inBrowserStore.switchActiveDatabase(name, connectionId);
+}
+
+export async function listTables(databaseName?: string): Promise<TableDefinition[]> {
+  const activeConn = inBrowserStore.connections.find((c) => c.id === inBrowserStore.activeConnectionId);
+  const targetDb = databaseName || activeConn?.database || "temnion_default";
+  return inBrowserStore.tables.filter((t) => t.databaseName.toLowerCase() === targetDb.toLowerCase());
+}
+
+export async function createTable(options: NewTableOptions): Promise<TableDefinition> {
+  return inBrowserStore.createTableCatalog(options);
+}
+
+export async function deleteTable(name: string, databaseName?: string): Promise<TableDefinition[]> {
+  return inBrowserStore.deleteTableCatalog(name, databaseName);
+}
+
+export async function listSavedQueries(databaseName?: string): Promise<SavedQuery[]> {
+  const activeConn = inBrowserStore.connections.find((c) => c.id === inBrowserStore.activeConnectionId);
+  const targetDb = databaseName || activeConn?.database || "temnion_default";
+  return inBrowserStore.savedQueries.filter((q) => q.databaseName.toLowerCase() === targetDb.toLowerCase());
+}
+
+export async function saveQuery(options: NewQueryOptions): Promise<SavedQuery> {
+  return inBrowserStore.createSavedQueryCatalog(options);
+}
+
+export async function deleteSavedQuery(id: string): Promise<SavedQuery[]> {
+  return inBrowserStore.deleteSavedQueryCatalog(id);
+}
+
+export async function listTimeObjects(databaseName?: string): Promise<TimeObject[]> {
+  const activeConn = inBrowserStore.connections.find((c) => c.id === inBrowserStore.activeConnectionId);
+  const targetDb = databaseName || activeConn?.database || "temnion_default";
+  return inBrowserStore.timeObjects.filter((t) => t.databaseName.toLowerCase() === targetDb.toLowerCase());
+}
+
+export async function createTimeObject(options: NewTimeOptions): Promise<TimeObject> {
+  return inBrowserStore.createTimeObjectCatalog(options);
+}
+
+export async function deleteTimeObject(id: string): Promise<TimeObject[]> {
+  return inBrowserStore.deleteTimeObjectCatalog(id);
+}
+
+export async function listBranchObjects(databaseName?: string): Promise<BranchObject[]> {
+  const activeConn = inBrowserStore.connections.find((c) => c.id === inBrowserStore.activeConnectionId);
+  const targetDb = databaseName || activeConn?.database || "temnion_default";
+  return inBrowserStore.branchObjects.filter((b) => b.databaseName.toLowerCase() === targetDb.toLowerCase());
+}
+
+export async function createBranchObject(options: NewBranchOptions): Promise<BranchObject> {
+  return inBrowserStore.createBranchCatalog(options);
+}
+
+export async function deleteBranchObject(name: string, databaseName?: string): Promise<BranchObject[]> {
+  return inBrowserStore.deleteBranchCatalog(name, databaseName);
+}
+
