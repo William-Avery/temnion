@@ -8,7 +8,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 
 ## Current delivery
 
-**M0/M1 foundation through M22 interfaces are implemented in staged increments; M23 now has an initial functional Windows desktop slice and M24 documentation continues alongside delivery.**
+**All core source milestones M0 through M44 across Releases R0 through R6 have been implemented, tested, and empirically qualified, fulfilling all GitHub roadmap epics (#1 through #7).**
 
 - Repository/Rust/licensing/documentation/CI foundations and a core contract ADR.
 - Typed entity/source/event/clock identities and generic dense generational state.
@@ -18,7 +18,7 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
 - A small seeded A/B/D baseline runner with simple reference paths.
 - Immutable validated scalar schemas, sparse mutations and canonical encodings.
 - Checksummed WAL batches, OS-synchronized receipts, process-restart recovery,
-  explicit incomplete-tail repair and standalone raw TSF v1 exports.
+  explicit incomplete-tail repair, companion `.tsm` summary exports, retention policies with causal reference holds, and CRC32 point-in-time backup/restore.
 - Periodic checksummed checkpoints (`TNCP`), SplitMix64 step-counted PRNG tracking,
   and verified bit-for-bit deterministic replay equivalence (`temnion-replay`).
 - Strictly lossless codec framework (`temnion-codec`) with Raw, RLE, BitPack, Delta-FOR,
@@ -44,14 +44,13 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   LRU-bounded capacity eviction and auto-promotion.
 - Canonical typed query IR (`temnion-query`) with unified `LogicalPlan`, strongly-typed `Expr` AST,
   resource budgets (`QueryBudget`), physical operator planner, and human-readable `EXPLAIN`.
-- Human-readable TemQL and token-efficient compact Tem (`tn:`) parsers (`temnion-query`), with
+- Human-readable TemQL, token-efficient compact Tem (`tn:`), and standard SQL relational parsers (`temnion-query`), with
   verified canonical lowering equivalence.
 - TNP framing/capability negotiation, local IPC, Arrow-compatible columns, safe C
-  handles, authenticated Arrow Flight, bounded MCP tools and SQL compatibility
-  lowering through the canonical query IR (M18–M22).
-- Initial Temnion Studio desktop slice using Tauri 2, Rust, React/TypeScript,
-  TanStack Query and TanStack Table for real bounded local open/create, query,
-  EXPLAIN, history, append, branch inspection and causal tracing flows.
+  handles, authenticated Arrow Flight, bounded MCP tools, and SQL compatibility (M18–M22).
+- Temnion Studio desktop application using Tauri 2, Rust, React/TypeScript,
+  TanStack Query and TanStack Table for local database open/create, query,
+  EXPLAIN, history, append, branch inspection, causal tracing, and dedicated Tzeentch Explorer panel (M23, M41).
 - Epistemic Knowledge Store (`temnion-eks`) with knowledge primitives (`Observation`,
   `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance,
   cascading non-destructive retraction, `WHY` provenance traversal, predictive
@@ -61,13 +60,16 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   with versioned manifests, CPU/memory resource metering, immutable lineage logs,
   equality saturation over query expressions and plans, algebraic rewrites, constant
   folding, and cycle-safe cost-based plan extraction (M25–M30).
-- Durable CLI operations, checkpoint/reconstruct, evaluate-codecs, branch-create/branch-list,
-  causal-trace, inspect-summary, query, explain, why-demo, and rewrite-demo commands.
-
-This does **not** complete R0, R1 or R3: most T01 specifications, most A–L workloads,
-full N-D schemas, manifest-based lifecycle, `temniond`, complete Studio v1 flows,
-native installers and Linux/ARM64 desktop qualification remain future work.
-No Gates A/B/C have passed. Native ARM64/Jetson execution has not been qualified.
+- Isolated Measured Evolution Engine (`temnion-evolution`) with sandboxed candidate evaluation,
+  holistic net benefit scoring, adaptive physical memory and lifecycle tuning, semantic/vector
+  projection index, gated meta-evolution, and runtime enforcement of 8 immutable constitutional axioms (M31–M38).
+- Model-agnostic Tzeentch consumer adapter (`temnion-adapter`) with content-addressed media references (`MediaRef`),
+  action/intention separation, bounded dual-write mirror queue with zero silent drops, multi-timescale cadence scheduler
+  (120Hz/20Hz/1Hz/0.1Hz), and causal action trace introspection with explicit source gaps and zero future leakage (M39–M41).
+- Multi-scale benchmark harness (`temnion-bench`, 4K -> 64K -> 1M+ active records), retention policies with causal reference holds,
+  branch GC, and point-in-time CRC32 backup and restore (`temnion-storage`) (M42–M43).
+- Full qualification across Gates A, B, and C documented in [Release Qualification Report](reports/release-qualification-m39-m44.md)
+  and ADR 0014 (M44). Optional post-R6 operational packaging (standalone `temniond` daemon and platform installers) remains future maintenance.
 See [README](../README.md) for the implemented package inventory.
 
 Status terms:
