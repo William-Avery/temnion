@@ -1,0 +1,27 @@
+[Unit]
+Description=Temnion Temporal-Epistemic Database Daemon
+Documentation=https://github.com/William-Avery/temnion
+After=network.target network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=temnion
+Group=temnion
+ExecStart=/usr/local/bin/temniond run --config /etc/temnion/temnion.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+RestartSec=5s
+KillMode=mixed
+TimeoutStopSec=30s
+LimitNOFILE=65536
+
+# Security hardening and sandboxing
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/temnion
+PrivateTmp=true
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

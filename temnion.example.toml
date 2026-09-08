@@ -1,0 +1,29 @@
+# Temnion Standalone Daemon Configuration Template
+# Place this file at temnion.toml or pass via --config <path>
+
+[storage]
+# Authoritative database directory containing the append-only log, index, and branch catalog.
+data_dir = "./data/temnion_db"
+
+# Authoritative source node identifier.
+source_id = 1
+
+# Authoritative source epoch counter.
+source_epoch = 1
+
+[network]
+# Server identity reported during client handshake negotiations.
+server_id = "temniond-primary"
+
+# Bind address and port for the high-performance binary Temnion Network Protocol (TNP).
+tnp_bind = "127.0.0.1:9180"
+
+# Bind address and port for Arrow Flight analytical columnar transport.
+flight_bind = "127.0.0.1:9181"
+
+# Enable or disable Model Context Protocol (MCP) tool integration.
+mcp_enabled = true
+
+[maintenance]
+# Periodic background maintenance and store checkpointing interval in seconds.
+maintenance_interval_secs = 60

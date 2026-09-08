@@ -185,6 +185,12 @@ Exit: mandatory interfaces have real examples/tests/docs, losing research
 candidates are explicitly classified, and supported platform/release statements
 are backed by execution evidence.
 
+## Post-R6 — Operational extensions and standalone daemon
+
+| Task | Status | Deliverable and acceptance |
+| --- | --- | --- |
+| Operational Daemon (`temniond`) | Implemented (`apps/temniond`, `services/`, `scripts/`) | Standalone background service binary (`temniond`) hosting TNP TCP sockets, Arrow Flight, and MCP with line-by-line TOML configuration (`DaemonConfig`, `temnion.example.toml`), Linux `systemd` service unit with strict sandboxing (`services/systemd/temniond.service`), Windows Service management scripts (`services/windows/install-service.ps1`, `uninstall-service.ps1`), distribution packaging script (`scripts/package-release.ps1`), and [ADR 0015](adr/0015-standalone-daemon-and-operational-lifecycle.md). |
+
 ## Gates
 
 Gate criteria, datasets, comparator settings, statistical method, meaningful
@@ -253,6 +259,7 @@ original files retain their historical names unchanged.
 | M42 | Scale tests | T21 | Implemented (`temnion-bench`): Scale benchmark harness (4K, 64K, 1M+ active records) verifying ingestion throughput, point lookup latency, range scan performance, and depth-32 causal graph traces |
 | M43 | Retention/lifecycle stress | T10/T21 | Implemented (`temnion-storage`): Retention policies, causal reference holds strictly preventing eviction of pinned sequences, branch GC, and CRC32 point-in-time backup and restore |
 | M44 | Static/adaptive evaluation | Gates A–C/T21 | Implemented: Comprehensive qualification report (`docs/reports/release-qualification-m39-m44.md`) evaluating Gates A, B, and C, ADR 0014, and static vs adaptive empirical findings |
+| Post-R6 | Standalone daemon & operations | Operational | Implemented (`temniond`): Multi-protocol daemon (TNP, Flight, MCP), systemd/Windows services, packaging script, and ADR 0015 |
 
 ## Specification and validation map
 
@@ -270,6 +277,7 @@ not placeholder specifications that imply working interfaces.
 | Lifecycle | Architecture's exact/no-auto-delete defaults | Retention/reference/GC, backup/restore and migration specifications, T10/T21 |
 | Consumer and Studio | Architecture, milestone requirements and [Studio guide](STUDIO.md) | Adapter mappings/parity/replay limits; complete native packaging and platform-qualified end-to-end flows, T09/T13/T20 |
 | Measurement | [BENCHMARKING](BENCHMARKING.md) | Full A–L fixtures, predeclared Gates A/B/C and native platform reports |
+| Daemon / Operations | [ADR 0015](adr/0015-standalone-daemon-and-operational-lifecycle.md) | Service units, Windows Service automation, configuration template, packaging script |
 
 Every feature requires implementation, targeted tests, documentation and a
 runnable example; performance-sensitive work needs relevant evidence. Optional
