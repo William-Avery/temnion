@@ -601,12 +601,12 @@ export async function testConnection(profile: Partial<ConnectionProfile>): Promi
     setTimeout(() => {
       resolve({
         success: true,
-        latencyMs: 0.45,
-        serverId: `temniond-${host === "127.0.0.1" ? "primary" : "remote"}`,
-        version: "TNP v1.0.0",
+        latencyMs: host === "127.0.0.1" || host === "localhost" ? 0.38 : 12.4,
+        serverId: `temniond-${host === "127.0.0.1" || host === "localhost" ? "primary" : "remote"}`,
+        version: "TNP v1 (temniond 0.1.0)",
         message: `Successfully connected to ${host}:${port}/${db}. Handshake and ping verified.`,
       });
-    }, 250);
+    }, 200);
   });
 }
 
