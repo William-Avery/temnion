@@ -86,40 +86,7 @@ function Logo() {
   );
 }
 
-function Sidebar({ view, onChange }: { view: View; onChange: (view: View) => void }) {
-  const groups = ["Learn & Docs", "Workbench", "Operate"];
-  return (
-    <nav className="studio-sidebar" aria-label="Studio sections">
-      {groups.map((group) => (
-        <div className="nav-group" key={group}>
-          <div className="nav-label">{group}</div>
-          {navItems
-            .filter((item) => item.group === group)
-            .map((item) => (
-              <button
-                className={`nav-item ${view === item.id ? "active" : ""}`}
-                key={item.id}
-                onClick={() => onChange(item.id)}
-                type="button"
-              >
-                <span className="nav-icon" aria-hidden="true">{item.icon}</span>
-                <span>{item.label}</span>
-              </button>
-            ))}
-        </div>
-      ))}
-      <div className="sidebar-footer">
-        <div className="engine-badge">
-          <div className="engine-indicator" />
-          <div>
-            <div className="engine-label">Bounded native commands</div>
-            <div className="engine-sub">Rust · React · TanStack</div>
-          </div>
-        </div>
-      </div>
-    </nav>
-  );
-}
+
 
 function Notice({ kind = "info", children }: { kind?: "info" | "error" | "success"; children: React.ReactNode }) {
   return <div className={`notice notice-${kind}`}>{children}</div>;
@@ -724,7 +691,13 @@ function SchemaPanel() {
   );
 }
 
-function ConnectionsPanel({ status }: { status: EngineStatus }) {
+function ConnectionsPanel({
+  status,
+  onEditConnection,
+}: {
+  status: EngineStatus;
+  onEditConnection?: (conn: ConnectionProfile) => void;
+}) {
   const queryClient = useQueryClient();
   const connectionsQuery = useQuery({ queryKey: ["connections"], queryFn: listConnections });
   const connections = connectionsQuery.data ?? [];
@@ -733,7 +706,18 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [testStatus, setTestStatus] = useState<{ success: boolean; message: string; latencyMs: number } | null>(null);
 
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<{
+    id?: string;
+    name: string;
+    host: string;
+    tnpPort: number;
+    flightPort: number;
+    database: string;
+    username: string;
+    authToken: string;
+    tls: boolean;
+  }>({
+    id: undefined,
     name: "New Connection",
     host: "127.0.0.1",
     tnpPort: 9180,
@@ -800,9 +784,24 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
     },
   });
 
+  const handleEditInline = (conn: ConnectionProfile) => {
+    setForm({
+      id: conn.id,
+      name: conn.name,
+      host: conn.host,
+      tnpPort: conn.tnpPort,
+      flightPort: conn.flightPort,
+      database: conn.database,
+      username: conn.username,
+      authToken: conn.authToken ?? "",
+      tls: conn.tls,
+    });
+    setShowAddForm(true);
+  };
+
   const handleSave = () => {
     const profile: ConnectionProfile = {
-      id: `conn-${Date.now()}`,
+      id: form.id || `conn-${Date.now()}`,
       name: form.name,
       host: form.host,
       tnpPort: form.tnpPort,
@@ -811,10 +810,10 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
       username: form.username,
       authToken: form.authToken ? "••••••••" : undefined,
       tls: form.tls,
-      lastConnected: "Never",
-      status: "disconnected",
-      latencyMs: 0.45,
-      serverVersion: "TNP v1.0.0",
+      lastConnected: "Just now",
+      status: "connected",
+      latencyMs: testStatus?.latencyMs ?? 0.38,
+      serverVersion: "TNP v1 (temniond 0.1.0)",
     };
     saveMutation.mutate(profile);
   };
@@ -834,7 +833,26 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
         <button
           className="btn btn-primary btn-sm"
           type="button"
-          onClick={() => setShowAddForm(!showAddForm)}
+          onClick={() => {
+            if (onEditConnection) {
+              onEditConnection({
+                id: "",
+                name: "New Connection",
+                host: "127.0.0.1",
+                tnpPort: 9180,
+                flightPort: 9181,
+                database: "temnion_default",
+                username: "temnion_admin",
+                authToken: "",
+                tls: false,
+                status: "disconnected",
+                latencyMs: 0.38,
+                serverVersion: "TNP v1 (temniond 0.1.0)",
+              });
+            } else {
+              setShowAddForm(!showAddForm);
+            }
+          }}
         >
           {showAddForm ? "Cancel" : "+ Add New Connection"}
         </button>
@@ -851,7 +869,7 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
       {showAddForm && (
         <div className="glass-card" style={{ padding: "16px", marginBottom: "20px", border: "1px solid #38bdf8" }}>
           <div style={{ fontSize: "15px", fontWeight: "bold", color: "#e2e8f0", marginBottom: "12px" }}>
-            New Temnion Database Connection
+            {form.id ? `Edit Connection: ${form.name}` : "New Temnion Database Connection"}
           </div>
           <div className="form-grid" style={{ marginBottom: "12px" }}>
             <label className="form-group">
@@ -978,13 +996,20 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
                 <div>Latency: <span style={{ color: "#34d399" }}>{conn.latencyMs ? `${conn.latencyMs} ms` : "—"}</span></div>
               </div>
 
-              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", flexWrap: "wrap" }}>
                 <button
                   className="btn btn-secondary btn-sm"
                   type="button"
                   onClick={() => testMutation.mutate(conn)}
                 >
                   Test
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  onClick={() => onEditConnection ? onEditConnection(conn) : handleEditInline(conn)}
+                >
+                  ⚙ Edit Properties
                 </button>
                 {conn.id !== "conn-local-primary" && (
                   <button
@@ -1107,51 +1132,959 @@ function MetricsPanel({ status }: { status: EngineStatus }) {
   );
 }
 
+/* ==========================================================================
+   Navicat-Style Connection Properties Modal Dialog
+   ========================================================================== */
+
+interface ConnectionPropertiesModalProps {
+  connection: ConnectionProfile | null;
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (saved: ConnectionProfile) => void;
+}
+
+function ConnectionPropertiesModal({
+  connection,
+  isOpen,
+  onClose,
+  onSave,
+}: ConnectionPropertiesModalProps) {
+  if (!isOpen || !connection) return null;
+
+  const [form, setForm] = useState<ConnectionProfile>({ ...connection });
+  const [showToken, setShowToken] = useState(false);
+  const [activeTab, setActiveTab] = useState<"general" | "network" | "ssl">("general");
+  const [testResult, setTestResult] = useState<{
+    success: boolean;
+    message: string;
+    latencyMs?: number;
+    serverVersion?: string;
+  } | null>(null);
+  const [testing, setTesting] = useState(false);
+
+  useEffect(() => {
+    setForm({ ...connection });
+    setTestResult(null);
+  }, [connection]);
+
+  const handleTest = async () => {
+    setTesting(true);
+    setTestResult(null);
+    try {
+      const res = await testConnection(form);
+      setTestResult({
+        success: res.success,
+        message: res.message,
+        latencyMs: res.latencyMs,
+        serverVersion: res.version,
+      });
+    } catch (err) {
+      setTestResult({
+        success: false,
+        message: errorText(err),
+      });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated: ConnectionProfile = {
+      ...form,
+      id: form.id || `conn-${Date.now()}`,
+      latencyMs: testResult?.latencyMs ?? form.latencyMs ?? 0.38,
+      serverVersion: testResult?.serverVersion ?? form.serverVersion ?? "TNP v1 (temniond 0.1.0)",
+    };
+    onSave(updated);
+  };
+
+  return (
+    <div className="connection-modal-overlay" onClick={onClose}>
+      <div className="connection-modal" onClick={(e) => e.stopPropagation()}>
+        <div className="connection-modal-header">
+          <div className="connection-modal-title">
+            <span>⚙</span>
+            <span>Connection Properties — {form.name || "New Connection"}</span>
+          </div>
+          <button className="tab-close" type="button" onClick={onClose} style={{ fontSize: "16px" }}>
+            ✕
+          </button>
+        </div>
+
+        <div className="connection-modal-tabs">
+          <button
+            className={`connection-modal-tab-btn ${activeTab === "general" ? "active" : ""}`}
+            onClick={() => setActiveTab("general")}
+            type="button"
+          >
+            General
+          </button>
+          <button
+            className={`connection-modal-tab-btn ${activeTab === "network" ? "active" : ""}`}
+            onClick={() => setActiveTab("network")}
+            type="button"
+          >
+            Network & Ports
+          </button>
+          <button
+            className={`connection-modal-tab-btn ${activeTab === "ssl" ? "active" : ""}`}
+            onClick={() => setActiveTab("ssl")}
+            type="button"
+          >
+            Security & TLS
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="connection-modal-body">
+            {activeTab === "general" && (
+              <div className="form-grid">
+                <label className="form-group" style={{ gridColumn: "span 2" }}>
+                  Connection Name
+                  <input
+                    className="text-input"
+                    value={form.name}
+                    onChange={(e) => setForm({ ...form, name: e.target.value })}
+                    placeholder="Local Primary Node (TNP)"
+                    required
+                  />
+                </label>
+                <label className="form-group">
+                  Host / IP Address
+                  <input
+                    className="text-input"
+                    value={form.host}
+                    onChange={(e) => setForm({ ...form, host: e.target.value })}
+                    placeholder="127.0.0.1"
+                    required
+                  />
+                </label>
+                <label className="form-group">
+                  Initial Database
+                  <input
+                    className="text-input"
+                    value={form.database}
+                    onChange={(e) => setForm({ ...form, database: e.target.value })}
+                    placeholder="temnion_default"
+                    required
+                  />
+                </label>
+                <label className="form-group">
+                  Username
+                  <input
+                    className="text-input"
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value })}
+                    placeholder="temnion_admin"
+                    required
+                  />
+                </label>
+                <label className="form-group">
+                  Password / Auth Token
+                  <div style={{ display: "flex", gap: "6px" }}>
+                    <input
+                      className="text-input"
+                      type={showToken ? "text" : "password"}
+                      value={form.authToken ?? ""}
+                      onChange={(e) => setForm({ ...form, authToken: e.target.value })}
+                      placeholder="••••••••"
+                      style={{ flex: 1 }}
+                    />
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      type="button"
+                      onClick={() => setShowToken(!showToken)}
+                    >
+                      {showToken ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </label>
+              </div>
+            )}
+
+            {activeTab === "network" && (
+              <div className="form-grid">
+                <label className="form-group">
+                  TNP Protocol Port (Binary Framing)
+                  <input
+                    className="num-input"
+                    type="number"
+                    value={form.tnpPort}
+                    onChange={(e) => setForm({ ...form, tnpPort: Number(e.target.value) })}
+                    placeholder="9180"
+                    required
+                  />
+                </label>
+                <label className="form-group">
+                  Arrow Flight SQL Port (Columnar)
+                  <input
+                    className="num-input"
+                    type="number"
+                    value={form.flightPort}
+                    onChange={(e) => setForm({ ...form, flightPort: Number(e.target.value) })}
+                    placeholder="9181"
+                    required
+                  />
+                </label>
+                <div style={{ gridColumn: "span 2", fontSize: "12px", color: "#94a3b8" }}>
+                  <div>TNP Default: <code>9180</code> (Low-latency bi-temporal commands & ingestion)</div>
+                  <div>Flight SQL Default: <code>9181</code> (Arrow RecordBatch columnar streaming)</div>
+                </div>
+              </div>
+            )}
+
+            {activeTab === "ssl" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "10px", cursor: "pointer" }}>
+                  <input
+                    type="checkbox"
+                    checked={form.tls}
+                    onChange={(e) => setForm({ ...form, tls: e.target.checked })}
+                  />
+                  <span style={{ fontSize: "13px", color: "#e2e8f0" }}>Require TLS / SSL Encryption</span>
+                </label>
+                <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: 1.6 }}>
+                  When TLS is enabled, the connection enforces TLS 1.3 encryption for both TNP and Arrow Flight streams.
+                </div>
+              </div>
+            )}
+
+            {testResult && (
+              <div className={`connection-test-result ${testResult.success ? "success" : "error"}`}>
+                <span>{testResult.success ? "✓" : "⚠"}</span>
+                <div>
+                  <div style={{ fontWeight: 600 }}>{testResult.message}</div>
+                  {testResult.latencyMs !== undefined && (
+                    <div style={{ fontSize: "11px", opacity: 0.9 }}>
+                      Round-trip latency: <strong>{testResult.latencyMs} ms</strong> · {testResult.serverVersion}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="connection-modal-footer">
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              disabled={testing}
+              onClick={handleTest}
+            >
+              {testing ? "Testing Ping..." : "Test Connection"}
+            </button>
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
+                Cancel
+              </button>
+              <button className="btn btn-primary btn-sm" type="submit">
+                Save Connection
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   Navicat Action Ribbon Toolbar
+   ========================================================================== */
+
+function NavicatRibbon({
+  onNewConnection,
+  onEditActiveConnection,
+  onNewQuery,
+  onOpenTables,
+  onOpenTemporalPlane,
+  onOpenBranches,
+  onOpenIngest,
+  onOpenStorage,
+  onOpenGuide,
+  onRefresh,
+}: {
+  onNewConnection: () => void;
+  onEditActiveConnection: () => void;
+  onNewQuery: () => void;
+  onOpenTables: () => void;
+  onOpenTemporalPlane: () => void;
+  onOpenBranches: () => void;
+  onOpenIngest: () => void;
+  onOpenStorage: () => void;
+  onOpenGuide: () => void;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="navicat-ribbon" role="toolbar" aria-label="Navicat Action Ribbon">
+      <div className="ribbon-group">
+        <button className="ribbon-btn" type="button" onClick={onNewConnection} title="Create a new database connection">
+          <span className="ribbon-icon">◎</span>
+          <span className="ribbon-label">+ Connection</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onEditActiveConnection} title="Edit active connection properties">
+          <span className="ribbon-icon">⚙</span>
+          <span className="ribbon-label">Properties</span>
+        </button>
+      </div>
+
+      <div className="ribbon-group">
+        <button className="ribbon-btn" type="button" onClick={onNewQuery} title="Open new query editor tab">
+          <span className="ribbon-icon" style={{ color: "#38bdf8" }}>⚡</span>
+          <span className="ribbon-label">New Query</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onOpenTables} title="Open schema and table designer">
+          <span className="ribbon-icon" style={{ color: "#a5b4fc" }}>⊞</span>
+          <span className="ribbon-label">Table</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onOpenTemporalPlane} title="Open bi-temporal plane visualizer">
+          <span className="ribbon-icon" style={{ color: "#34d399" }}>◴</span>
+          <span className="ribbon-label">Time Travel</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onOpenBranches} title="Open branch and causality DAG">
+          <span className="ribbon-icon" style={{ color: "#c084fc" }}>⑂</span>
+          <span className="ribbon-label">Branches</span>
+        </button>
+      </div>
+
+      <div className="ribbon-group">
+        <button className="ribbon-btn" type="button" onClick={onOpenIngest} title="Ingest bi-temporal event batches">
+          <span className="ribbon-icon">⇧</span>
+          <span className="ribbon-label">Ingest</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onOpenStorage} title="View storage metrics and segment manifests">
+          <span className="ribbon-icon">▥</span>
+          <span className="ribbon-label">Storage</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onRefresh} title="Refresh connection and cache">
+          <span className="ribbon-icon">⟳</span>
+          <span className="ribbon-label">Refresh</span>
+        </button>
+      </div>
+
+      <div className="ribbon-group">
+        <button className="ribbon-btn" type="button" onClick={onOpenGuide} title="Open developer How-To Guide">
+          <span className="ribbon-icon" style={{ color: "#f59e0b" }}>📖</span>
+          <span className="ribbon-label">Guide</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   Navicat Object Explorer Database Tree
+   ========================================================================== */
+
+function ObjectExplorerTree({
+  connections,
+  activeConnId,
+  onSelectConnection,
+  onEditConnection,
+  onDeleteConnection,
+  onNewConnection,
+  onOpenTable,
+  onOpenBranches,
+  onOpenStorage,
+}: {
+  connections: ConnectionProfile[];
+  activeConnId: string;
+  onSelectConnection: (id: string) => void;
+  onEditConnection: (conn: ConnectionProfile) => void;
+  onDeleteConnection: (id: string) => void;
+  onNewConnection: () => void;
+  onOpenTable: (schemaName: string) => void;
+  onOpenBranches: () => void;
+  onOpenStorage: () => void;
+}) {
+  const [expandedConns, setExpandedConns] = useState<Record<string, boolean>>({
+    "conn-local-primary": true,
+  });
+  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
+    tables: true,
+    branches: true,
+    storage: false,
+  });
+
+  const toggleConn = (id: string) => {
+    setExpandedConns((prev) => ({ ...prev, [id]: !prev[id] }));
+  };
+
+  const toggleSection = (key: string) => {
+    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  return (
+    <aside className="object-tree-container" aria-label="Database Object Explorer">
+      <div className="tree-header">
+        <span>Object Explorer</span>
+        <div style={{ display: "flex", gap: "6px" }}>
+          <button
+            className="tree-action-icon-btn"
+            title="New Database Connection"
+            onClick={onNewConnection}
+            type="button"
+          >
+            +
+          </button>
+        </div>
+      </div>
+
+      <div style={{ padding: "6px 0" }}>
+        {connections.map((conn) => {
+          const isExpanded = !!expandedConns[conn.id];
+          const isActive = conn.id === activeConnId;
+
+          return (
+            <div className="tree-node-root" key={conn.id}>
+              <div
+                className={`tree-node-conn ${isActive ? "active" : ""}`}
+                onClick={() => toggleConn(conn.id)}
+                title={`temnion://${conn.username}@${conn.host}:${conn.tnpPort}/${conn.database}`}
+              >
+                <div className="tree-conn-left">
+                  <span style={{ fontSize: "10px", color: "#94a3b8", width: "12px" }}>
+                    {isExpanded ? "▼" : "▶"}
+                  </span>
+                  <span
+                    className={`tree-status-dot ${isActive ? "connected" : "disconnected"}`}
+                    title={isActive ? "Connected" : "Disconnected"}
+                  />
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "155px" }}>
+                    {conn.name}
+                  </span>
+                </div>
+                <div className="tree-conn-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="tree-action-icon-btn"
+                    title="Edit Connection Properties"
+                    onClick={() => onEditConnection(conn)}
+                    type="button"
+                  >
+                    ⚙
+                  </button>
+                  {!isActive && (
+                    <button
+                      className="tree-action-icon-btn"
+                      title="Connect / Make Active"
+                      onClick={() => onSelectConnection(conn.id)}
+                      type="button"
+                    >
+                      ⚡
+                    </button>
+                  )}
+                  {conn.id !== "conn-local-primary" && (
+                    <button
+                      className="tree-action-icon-btn"
+                      title="Delete Connection"
+                      onClick={() => onDeleteConnection(conn.id)}
+                      type="button"
+                    >
+                      🗑
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {isExpanded && (
+                <div className="tree-children">
+                  {/* Database Node */}
+                  <div className="tree-sub-folder" style={{ color: "#c7d2fe", fontWeight: 600 }}>
+                    <span>🗄️</span>
+                    <span>{conn.database}</span>
+                  </div>
+
+                  {/* Tables Node */}
+                  <div style={{ paddingLeft: "12px" }}>
+                    <div
+                      className="tree-sub-folder"
+                      onClick={() => toggleSection(`${conn.id}-tables`)}
+                    >
+                      <span style={{ fontSize: "9px" }}>
+                        {expandedSections[`${conn.id}-tables`] !== false ? "▼" : "▶"}
+                      </span>
+                      <span>📁</span>
+                      <span>Tables</span>
+                      <span className="tree-count-badge">4</span>
+                    </div>
+
+                    {expandedSections[`${conn.id}-tables`] !== false && (
+                      <div>
+                        <div
+                          className="tree-leaf-item"
+                          onClick={() => onOpenTable("SensorTelemetry")}
+                        >
+                          <span>⊞</span>
+                          <span>SensorTelemetry</span>
+                        </div>
+                        <div
+                          className="tree-leaf-item"
+                          onClick={() => onOpenTable("FinancialLedger")}
+                        >
+                          <span>⊞</span>
+                          <span>FinancialLedger</span>
+                        </div>
+                        <div
+                          className="tree-leaf-item"
+                          onClick={() => onOpenTable("SystemSecurityAudit")}
+                        >
+                          <span>⊞</span>
+                          <span>SystemSecurityAudit</span>
+                        </div>
+                        <div
+                          className="tree-leaf-item"
+                          onClick={() => onOpenTable("StateSnapshot")}
+                        >
+                          <span>⊞</span>
+                          <span>StateSnapshot</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Branches Node */}
+                    <div
+                      className="tree-sub-folder"
+                      onClick={() => toggleSection(`${conn.id}-branches`)}
+                    >
+                      <span style={{ fontSize: "9px" }}>
+                        {expandedSections[`${conn.id}-branches`] !== false ? "▼" : "▶"}
+                      </span>
+                      <span>📁</span>
+                      <span>Branches & DAG</span>
+                      <span className="tree-count-badge">3</span>
+                    </div>
+
+                    {expandedSections[`${conn.id}-branches`] !== false && (
+                      <div>
+                        <div className="tree-leaf-item" onClick={onOpenBranches}>
+                          <span style={{ color: "#34d399" }}>●</span>
+                          <span style={{ color: "#a7f3d0", fontWeight: 600 }}>main (active)</span>
+                        </div>
+                        <div className="tree-leaf-item" onClick={onOpenBranches}>
+                          <span style={{ color: "#c084fc" }}>⑂</span>
+                          <span>staging</span>
+                        </div>
+                        <div className="tree-leaf-item" onClick={onOpenBranches}>
+                          <span style={{ color: "#c084fc" }}>⑂</span>
+                          <span>hotfix-causal</span>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Storage & Engine Node */}
+                    <div
+                      className="tree-sub-folder"
+                      onClick={() => toggleSection(`${conn.id}-storage`)}
+                    >
+                      <span style={{ fontSize: "9px" }}>
+                        {expandedSections[`${conn.id}-storage`] ? "▼" : "▶"}
+                      </span>
+                      <span>📁</span>
+                      <span>Storage & Engine</span>
+                    </div>
+
+                    {expandedSections[`${conn.id}-storage`] && (
+                      <div>
+                        <div className="tree-leaf-item" onClick={onOpenStorage}>
+                          <span>📄</span>
+                          <span>Active WAL Prefix</span>
+                        </div>
+                        <div className="tree-leaf-item" onClick={onOpenStorage}>
+                          <span>📄</span>
+                          <span>SegmentManifest</span>
+                        </div>
+                        <div className="tree-leaf-item" onClick={onOpenStorage}>
+                          <span>📄</span>
+                          <span>TSF Segments</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </aside>
+  );
+}
+
+/* ==========================================================================
+   Navicat Multi-Document Tabs Bar
+   ========================================================================== */
+
+interface StudioTab {
+  id: string;
+  type: View | "table";
+  title: string;
+  icon: string;
+  tableName?: string;
+  querySnippet?: string;
+}
+
+function NavicatTabsBar({
+  tabs,
+  activeTabId,
+  onSelectTab,
+  onCloseTab,
+  onNewQueryTab,
+}: {
+  tabs: StudioTab[];
+  activeTabId: string;
+  onSelectTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
+  onNewQueryTab: () => void;
+}) {
+  return (
+    <div className="navicat-tabs-bar" role="tablist" aria-label="Open documents">
+      {tabs.map((tab) => {
+        const isActive = tab.id === activeTabId;
+        return (
+          <div
+            key={tab.id}
+            role="tab"
+            aria-selected={isActive}
+            className={`navicat-tab ${isActive ? "active" : ""}`}
+            onClick={() => onSelectTab(tab.id)}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.title}</span>
+            {tabs.length > 1 && (
+              <button
+                className="tab-close"
+                type="button"
+                title="Close tab"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        );
+      })}
+      <button
+        className="tab-add-btn"
+        type="button"
+        title="New Query Tab"
+        onClick={onNewQueryTab}
+      >
+        +
+      </button>
+    </div>
+  );
+}
+
+/* ==========================================================================
+   Table Viewer Panel (Navicat Object Viewer)
+   ========================================================================== */
+
+function TableViewerPanel({
+  tableName,
+  onRunQuery,
+}: {
+  tableName: string;
+  onRunQuery: (query: string) => void;
+}) {
+  const schemasQuery = useQuery({ queryKey: ["schemas"], queryFn: listSchemas });
+  const schemas = schemasQuery.data ?? [];
+  const schema = schemas.find((s) => s.name.toLowerCase() === tableName.toLowerCase()) ?? schemas[0];
+
+  const historyQuery = useQuery({ queryKey: ["history", 50], queryFn: () => listHistory(50) });
+  const historyRows: EventRow[] = historyQuery.data?.rows ?? [];
+  const filteredRows = historyRows.filter(
+    (r: EventRow) => (schema ? r.schema === schema.id : true)
+  );
+
+  return (
+    <section className="view-panel active">
+      <div className="table-viewer-toolbar">
+        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          <span style={{ fontSize: "18px" }}>⊞</span>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: "bold", color: "#f8fafc" }}>
+              Table: <span style={{ color: "#38bdf8" }}>{schema?.name ?? tableName}</span>
+            </div>
+            <div style={{ fontSize: "11px", color: "#94a3b8" }}>
+              {schema?.description ?? "Bi-temporal columnar event entity table"}
+            </div>
+          </div>
+        </div>
+        <div style={{ display: "flex", gap: "8px" }}>
+          <button
+            className="btn btn-primary btn-sm"
+            type="button"
+            onClick={() =>
+              onRunQuery(`SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 100`)
+            }
+          >
+            ⚡ Open in Query Studio
+          </button>
+        </div>
+      </div>
+
+      {schema && (
+        <div className="glass-card" style={{ padding: "14px", marginBottom: "16px" }}>
+          <div
+            style={{
+              fontSize: "12px",
+              fontWeight: "bold",
+              color: "#cbd5e1",
+              textTransform: "uppercase",
+              letterSpacing: "0.06em",
+              marginBottom: "8px",
+            }}
+          >
+            Column Definitions & Types
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: "8px" }}>
+            {schema.fields.map((f) => (
+              <span key={f.name} className="stat-pill" style={{ padding: "4px 10px" }}>
+                <strong style={{ color: "#e2e8f0" }}>{f.name}</strong>
+                <span style={{ color: "#818cf8" }}>: {f.type}</span>
+                {f.indexed && <span style={{ color: "#34d399", fontSize: "10px" }}>[IDX]</span>}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="glass-card" style={{ padding: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div style={{ fontSize: "14px", fontWeight: "600", color: "#e2e8f0" }}>
+            Data Grid ({filteredRows.length > 0 ? filteredRows.length : historyRows.length} rows)
+          </div>
+          <span className="badge badge-neutral">Arrow Columnar Format</span>
+        </div>
+        <EventTable rows={filteredRows.length > 0 ? filteredRows : historyRows} showPayload={true} />
+      </div>
+    </section>
+  );
+}
+
+/* ==========================================================================
+   Navicat Bottom Status Bar
+   ========================================================================== */
+
+function NavicatStatusBar({
+  connection,
+  eventCount,
+}: {
+  connection: ConnectionProfile;
+  eventCount: number;
+}) {
+  return (
+    <footer className="navicat-status-bar">
+      <div className="status-bar-left">
+        <div className="status-bar-item">
+          <span className={`tree-status-dot ${connection.status === "connected" ? "connected" : "disconnected"}`} />
+          <span>temnion://{connection.username}@{connection.host}:{connection.tnpPort}/{connection.database}</span>
+        </div>
+        <div className="status-bar-item">
+          <span>Latency: <strong style={{ color: "#34d399" }}>{connection.latencyMs ?? 0.38} ms</strong></span>
+        </div>
+        <div className="status-bar-item">
+          <span>Server: {connection.serverVersion ?? "TNP v1 (temniond 0.1.0)"}</span>
+        </div>
+      </div>
+      <div className="status-bar-right">
+        <div className="status-bar-item">
+          <span>Events: <strong>{eventCount}</strong></span>
+        </div>
+        <div className="status-bar-item">
+          <span>Database: <code>{connection.database}</code></span>
+        </div>
+        <div className="status-bar-item">
+          <span>Branch: <span style={{ color: "#c084fc" }}>main</span></span>
+        </div>
+        <div className="status-bar-item" style={{ color: "#10b981", fontWeight: 600 }}>
+          <span>#![forbid(unsafe_code)]</span>
+        </div>
+      </div>
+    </footer>
+  );
+}
+
+/* ==========================================================================
+   Main Application Root
+   ========================================================================== */
+
 export function App() {
-  const [view, setView] = useState<View>("guide");
-  const [querySnippet, setQuerySnippet] = useState<string | undefined>(undefined);
+  const queryClient = useQueryClient();
   const statusQuery = useQuery({ queryKey: ["engine-status"], queryFn: getEngineStatus, initialData: browserStatus });
   const status = statusQuery.data;
 
-  const handleNavigate = (targetView: View, snippet?: string) => {
-    if (snippet) {
-      setQuerySnippet(snippet);
+  const connectionsQuery = useQuery({ queryKey: ["connections"], queryFn: listConnections });
+  const connections = connectionsQuery.data ?? [
+    {
+      id: "conn-local-primary",
+      name: "Local Primary Node (TNP)",
+      host: "127.0.0.1",
+      tnpPort: 9180,
+      flightPort: 9181,
+      database: "temnion_default",
+      username: "temnion_admin",
+      authToken: "••••••••",
+      tls: false,
+      lastConnected: "Just now",
+      status: "connected" as const,
+      latencyMs: 0.38,
+      serverVersion: "TNP v1 (temniond 0.1.0)",
+    },
+  ];
+
+  const [activeConnId, setActiveConnId] = useState<string>("conn-local-primary");
+  const activeConnection = useMemo(() => {
+    return connections.find((c) => c.id === activeConnId) ?? connections[0];
+  }, [connections, activeConnId]);
+
+  const [editingConnection, setEditingConnection] = useState<ConnectionProfile | null>(null);
+
+  const [tabs, setTabs] = useState<StudioTab[]>([
+    { id: "tab-guide", type: "guide", title: "How-To Guide", icon: "📖" },
+    { id: "tab-query-1", type: "query", title: "Query 1", icon: "⚡" },
+  ]);
+  const [activeTabId, setActiveTabId] = useState<string>("tab-query-1");
+  const [queryCount, setQueryCount] = useState<number>(1);
+
+  const switchMutation = useMutation({
+    mutationFn: (id: string) => setActiveConnection(id),
+    onSuccess: (active) => {
+      setActiveConnId(active.id);
+      queryClient.invalidateQueries({ queryKey: ["engine-status"] });
+    },
+  });
+
+  const saveMutation = useMutation({
+    mutationFn: (profile: ConnectionProfile) => saveConnection(profile),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["connections"], updated);
+      setEditingConnection(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteConnection(id),
+    onSuccess: (updated) => queryClient.setQueryData(["connections"], updated),
+  });
+
+  const openTab = (
+    type: View | "table",
+    title: string,
+    icon: string,
+    extra?: { tableName?: string; querySnippet?: string }
+  ) => {
+    const existing = tabs.find((t) => {
+      if (type === "table") return t.type === "table" && t.tableName === extra?.tableName;
+      if (type === "query") return false;
+      return t.type === type;
+    });
+
+    if (existing) {
+      setActiveTabId(existing.id);
+    } else {
+      const newId = `tab-${type}-${Date.now()}`;
+      setTabs((prev) => [
+        ...prev,
+        {
+          id: newId,
+          type,
+          title,
+          icon,
+          tableName: extra?.tableName,
+          querySnippet: extra?.querySnippet,
+        },
+      ]);
+      setActiveTabId(newId);
     }
-    setView(targetView);
   };
 
-  let content: React.ReactNode;
-  switch (view) {
+  const handleNewQueryTab = (snippet?: string) => {
+    const nextCount = queryCount + 1;
+    setQueryCount(nextCount);
+    const newId = `tab-query-${nextCount}`;
+    setTabs((prev) => [
+      ...prev,
+      {
+        id: newId,
+        type: "query",
+        title: `Query ${nextCount}`,
+        icon: "⚡",
+        querySnippet: snippet,
+      },
+    ]);
+    setActiveTabId(newId);
+  };
+
+  const handleCloseTab = (idToClose: string) => {
+    if (tabs.length <= 1) return;
+    const nextTabs = tabs.filter((t) => t.id !== idToClose);
+    setTabs(nextTabs);
+    if (activeTabId === idToClose) {
+      setActiveTabId(nextTabs[nextTabs.length - 1].id);
+    }
+  };
+
+  const activeTab = tabs.find((t) => t.id === activeTabId) ?? tabs[0];
+
+  const handleNavigate = (targetView: View, snippet?: string) => {
+    if (targetView === "query") {
+      handleNewQueryTab(snippet);
+    } else {
+      const nav = navItems.find((item) => item.id === targetView);
+      openTab(targetView, nav ? nav.label : targetView, nav ? nav.icon : "•", { querySnippet: snippet });
+    }
+  };
+
+  let tabContent: React.ReactNode;
+  switch (activeTab.type) {
     case "guide":
-      content = <GuidePanel onNavigate={handleNavigate} />;
+      tabContent = <GuidePanel onNavigate={handleNavigate} />;
       break;
     case "query":
-      content = (
+      tabContent = (
         <QueryPanel
           connected={status.connected}
-          initialQuery={querySnippet}
-          onNavigateToConnections={() => setView("connections")}
-          onNavigateToGuide={() => setView("guide")}
+          initialQuery={activeTab.querySnippet}
+          onNavigateToConnections={() => openTab("connections", "Connections", "◎")}
+          onNavigateToGuide={() => openTab("guide", "How-To Guide", "📖")}
+        />
+      );
+      break;
+    case "table":
+      tabContent = (
+        <TableViewerPanel
+          tableName={activeTab.tableName ?? "SensorTelemetry"}
+          onRunQuery={(q) => handleNewQueryTab(q)}
         />
       );
       break;
     case "history":
-      content = <HistoryPanel connected={status.connected} eventCount={status.eventCount} />;
+      tabContent = <HistoryPanel connected={status.connected} eventCount={status.eventCount} />;
       break;
     case "causality":
-      content = <CausalityPanel connected={status.connected} eventCount={status.eventCount} />;
+      tabContent = <CausalityPanel connected={status.connected} eventCount={status.eventCount} />;
       break;
     case "schemas":
-      content = <SchemaPanel />;
+      tabContent = <SchemaPanel />;
       break;
     case "ingest":
-      content = <IngestPanel connected={status.connected} />;
+      tabContent = <IngestPanel connected={status.connected} />;
       break;
     case "connections":
-      content = <ConnectionsPanel status={status} />;
+      tabContent = (
+        <ConnectionsPanel
+          status={status}
+          onEditConnection={(conn) => setEditingConnection(conn)}
+        />
+      );
       break;
     case "metrics":
-      content = <MetricsPanel status={status} />;
+      tabContent = <MetricsPanel status={status} />;
       break;
   }
 
@@ -1159,10 +2092,39 @@ export function App() {
     <div className="studio-layout">
       <header className="studio-header">
         <Logo />
+        <NavicatRibbon
+          onNewConnection={() =>
+            setEditingConnection({
+              id: "",
+              name: "New Connection",
+              host: "127.0.0.1",
+              tnpPort: 9180,
+              flightPort: 9181,
+              database: "temnion_default",
+              username: "temnion_admin",
+              authToken: "",
+              tls: false,
+              status: "disconnected",
+              latencyMs: 0.38,
+              serverVersion: "TNP v1 (temniond 0.1.0)",
+            })
+          }
+          onEditActiveConnection={() => setEditingConnection(activeConnection)}
+          onNewQuery={() => handleNewQueryTab()}
+          onOpenTables={() => openTab("schemas", "Schema Catalog", "⊞")}
+          onOpenTemporalPlane={() => openTab("history", "Temporal Plane", "◴")}
+          onOpenBranches={() => openTab("causality", "Branches & DAG", "⑂")}
+          onOpenIngest={() => openTab("ingest", "Ingestion", "⇧")}
+          onOpenStorage={() => openTab("metrics", "Storage & Health", "▥")}
+          onOpenGuide={() => openTab("guide", "How-To Guide", "📖")}
+          onRefresh={() => {
+            queryClient.invalidateQueries();
+          }}
+        />
         <div className="header-status">
           <div
             className={`status-chip ${status.connected ? "connected" : ""}`}
-            onClick={() => setView("connections")}
+            onClick={() => openTab("connections", "Connections", "◎")}
             style={{ cursor: "pointer" }}
             title="Click to manage database connections"
           >
@@ -1170,36 +2132,61 @@ export function App() {
             <span>{status.connected ? `Connected · ${status.eventCount} events` : "No database connected"}</span>
           </div>
           <div className="status-chip branch-chip">main timeline</div>
-          <div className="status-chip mode-chip">TNP Port 9180</div>
-        </div>
-        <div className="header-actions">
-          <button
-            className={`btn ${view === "guide" ? "btn-primary" : "btn-secondary"} btn-sm`}
-            onClick={() => setView("guide")}
-            type="button"
-          >
-            📖 How-To Guide
-          </button>
-          <button
-            className={`btn ${view === "query" ? "btn-primary" : "btn-secondary"} btn-sm`}
-            onClick={() => setView("query")}
-            type="button"
-          >
-            ⚡ Query Studio
-          </button>
-          <button
-            className={`btn ${view === "connections" ? "btn-primary" : "btn-secondary"} btn-sm`}
-            onClick={() => setView("connections")}
-            type="button"
-          >
-            ◎ Connections
-          </button>
+          <div className="status-chip mode-chip">TNP Port {activeConnection.tnpPort}</div>
         </div>
       </header>
+
       <div className="studio-body">
-        <Sidebar view={view} onChange={setView} />
-        <main className="studio-content">{content}</main>
+        <ObjectExplorerTree
+          connections={connections}
+          activeConnId={activeConnId}
+          onSelectConnection={(id) => switchMutation.mutate(id)}
+          onEditConnection={(conn) => setEditingConnection(conn)}
+          onDeleteConnection={(id) => deleteMutation.mutate(id)}
+          onNewConnection={() =>
+            setEditingConnection({
+              id: "",
+              name: "New Connection",
+              host: "127.0.0.1",
+              tnpPort: 9180,
+              flightPort: 9181,
+              database: "temnion_default",
+              username: "temnion_admin",
+              authToken: "",
+              tls: false,
+              status: "disconnected",
+              latencyMs: 0.38,
+              serverVersion: "TNP v1 (temniond 0.1.0)",
+            })
+          }
+          onOpenTable={(tableName) => openTab("table", `Table: ${tableName}`, "⊞", { tableName })}
+          onOpenBranches={() => openTab("causality", "Branches & DAG", "⑂")}
+          onOpenStorage={() => openTab("metrics", "Storage & Health", "▥")}
+        />
+
+        <div className="studio-main-workspace">
+          <NavicatTabsBar
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onSelectTab={(id) => setActiveTabId(id)}
+            onCloseTab={handleCloseTab}
+            onNewQueryTab={() => handleNewQueryTab()}
+          />
+
+          <main className="studio-content">{tabContent}</main>
+
+          <NavicatStatusBar connection={activeConnection} eventCount={status.eventCount} />
+        </div>
       </div>
+
+      {editingConnection && (
+        <ConnectionPropertiesModal
+          connection={editingConnection}
+          isOpen={true}
+          onClose={() => setEditingConnection(null)}
+          onSave={(updated) => saveMutation.mutate(updated)}
+        />
+      )}
     </div>
   );
 }
