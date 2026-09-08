@@ -11,6 +11,8 @@ The native host currently provides real flows for:
 
 - creating or opening one local durable database;
 - executing TemQL, compact `tn:` and SQL scans through the canonical query IR;
+- editing queries with GitHub-style syntax highlighting, line numbers, active-line
+  focus and language-aware token colors for TemQL, compact Tem and SQL;
 - displaying bounded results through TanStack Table;
 - producing `EXPLAIN` output without opening a database;
 - reading bounded durable history and plotting valid time against known time;

@@ -457,6 +457,44 @@ body {
   box-shadow: 0 0 10px var(--accent-glow);
 }
 
+.query-code-editor {
+  width: 100%;
+}
+
+.query-code-editor .cm-editor {
+  min-height: 168px;
+  overflow: hidden;
+  border: 1px solid #30363d;
+  border-radius: var(--radius-sm);
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.query-code-editor .cm-editor.cm-focused {
+  border-color: #58a6ff;
+  box-shadow: 0 0 0 3px rgba(31, 111, 235, 0.22);
+}
+
+.query-code-editor .cm-scroller {
+  min-height: 168px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.query-code-editor--compact .cm-editor,
+.query-code-editor--compact .cm-scroller {
+  min-height: 140px;
+  max-height: 240px;
+}
+
+.query-code-editor .cm-content:focus {
+  outline: none;
+}
+
+.query-code-editor .cm-gutterElement {
+  user-select: none;
+}
+
 .editor-footer {
   display: flex;
   justify-content: space-between;

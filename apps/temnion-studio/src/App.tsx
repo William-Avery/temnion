@@ -63,6 +63,7 @@ import {
   traceCausality,
 } from "./api";
 import { GuidePanel } from "./Guide";
+import { QueryEditor } from "./QueryEditor";
 
 type View = "guide" | "query" | "history" | "causality" | "schemas" | "ingest" | "connections" | "metrics";
 type QueryFormat = "temql" | "compact" | "sql";
@@ -390,12 +391,11 @@ function QueryPanel({
           </div>
           <div className="toolbar-right bounded-label">Hard result ceiling: 1,000 rows</div>
         </div>
-        <textarea
-          aria-label="Query text"
-          className="code-editor"
-          spellCheck={false}
+        <QueryEditor
+          ariaLabel="Query text"
+          language={format}
+          onChange={setQuery}
           value={query}
-          onChange={(event) => setQuery(event.target.value)}
         />
         <div className="editor-footer">
           <label className="budget-label">
@@ -1893,12 +1893,12 @@ function CreateQueryModal({
 
             <div className="form-group">
               <label className="form-label">Query Definition</label>
-              <textarea
-                className="code-editor"
-                style={{ height: "140px", fontFamily: "var(--font-mono)", fontSize: "12px" }}
-                spellCheck={false}
+              <QueryEditor
+                ariaLabel="Saved query definition"
+                className="query-code-editor--compact"
+                language={format}
+                onChange={setQueryText}
                 value={queryText}
-                onChange={(e) => setQueryText(e.target.value)}
               />
             </div>
           </div>
