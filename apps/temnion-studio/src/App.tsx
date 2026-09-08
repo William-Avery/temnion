@@ -12,26 +12,53 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type AppendRequest,
   type BranchInfo,
+  type BranchObject,
   type ConnectionProfile,
+  type CreateDatabaseOptions,
+  type DatabaseInfo,
   type EngineStatus,
   type EventRow,
+  type NewBranchOptions,
+  type NewQueryOptions,
+  type NewTableOptions,
+  type NewTimeOptions,
+  type SavedQuery,
+  type TableColumn,
+  type TableDefinition,
+  type TimeObject,
   appendEvent,
   browserStatus,
   connectDatabase,
+  createBranchObject,
   createDatabase,
+  createDatabaseCatalog,
+  createTable,
+  createTimeObject,
+  deleteBranchObject,
   deleteConnection,
+  deleteDatabaseCatalog,
+  deleteSavedQuery,
+  deleteTable,
+  deleteTimeObject,
   disconnectDatabase,
   executeQuery,
   explainQuery,
   getEngineStatus,
   isNativeRuntime,
   listBranches,
+  listBranchObjects,
   listConnections,
+  listDatabases,
   listEntities,
   listHistory,
+  listSavedQueries,
   listSchemas,
+  listTables,
+  listTimeObjects,
   saveConnection,
+  saveQuery,
   setActiveConnection,
+  switchActiveDatabase,
   testConnection,
   traceCausality,
 } from "./api";
@@ -206,6 +233,16 @@ const queryPresets = [
     text: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nBETWEEN PHYSICAL 1757300000000000000 AND 1757305000000000000\nLIMIT 50",
   },
   {
+    label: "Create Database (SQL)",
+    fmt: "sql" as QueryFormat,
+    text: "CREATE DATABASE telemetry_stream;",
+  },
+  {
+    label: "Show Databases (SQL)",
+    fmt: "sql" as QueryFormat,
+    text: "SHOW DATABASES;",
+  },
+  {
     label: "TemQL Pipeline",
     fmt: "temql" as QueryFormat,
     text: "FROM temnion\nWHERE sequence > 0\nSELECT entity, schema, valid_time, known_time, sequence\nORDER BY sequence DESC\nLIMIT 25",
@@ -243,7 +280,20 @@ function QueryPanel({
     }
   }, [initialQuery]);
 
-  const run = useMutation({ mutationFn: () => executeQuery(query, maxRows) });
+  const queryClient = useQueryClient();
+  const run = useMutation({
+    mutationFn: () => executeQuery(query, maxRows),
+    onSuccess: (data) => {
+      if (data.message) {
+        queryClient.invalidateQueries({ queryKey: ["databases"] });
+        queryClient.invalidateQueries({ queryKey: ["connections"] });
+        queryClient.invalidateQueries({ queryKey: ["tables"] });
+        queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+        queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+        queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
+      }
+    },
+  });
   const explain = useMutation({ mutationFn: () => explainQuery(query) });
 
   const chooseFormat = (next: QueryFormat) => {
@@ -371,6 +421,11 @@ function QueryPanel({
       </div>
       {(run.error || explain.error) && <Notice kind="error">{errorText(run.error ?? explain.error)}</Notice>}
       {explain.data && <pre className="explain-output glass-card">{explain.data}</pre>}
+      {run.data?.message && (
+        <div className="query-result-message glass-card">
+          <span>{run.data.message}</span>
+        </div>
+      )}
       <div className="results-container glass-card">
         <div className="results-header">
           <div className="results-stats">
@@ -1390,16 +1445,725 @@ function ConnectionPropertiesModal({
 }
 
 /* ==========================================================================
+   Navicat-Style Object Creation Modal Dialogs
+   ========================================================================== */
+
+interface CreateDatabaseModalProps {
+  isOpen: boolean;
+  connections: ConnectionProfile[];
+  initialConnectionId: string;
+  onClose: () => void;
+  onCreate: (opts: CreateDatabaseOptions) => void;
+}
+
+function CreateDatabaseModal({
+  isOpen,
+  connections,
+  initialConnectionId,
+  onClose,
+  onCreate,
+}: CreateDatabaseModalProps) {
+  if (!isOpen) return null;
+
+  const [name, setName] = useState("");
+  const [connId, setConnId] = useState(initialConnectionId);
+  const [clockProfile, setClockProfile] = useState("Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)");
+  const [template, setTemplate] = useState("Industrial IoT & Telemetry");
+  const [storageTarget, setStorageTarget] = useState<"managed" | "embedded">("managed");
+  const [path, setPath] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Database name is required.");
+      return;
+    }
+    onCreate({
+      name: name.trim(),
+      connectionId: connId,
+      clockProfile,
+      template,
+      storageTarget,
+      path: storageTarget === "embedded" ? path : undefined,
+    });
+  };
+
+  return (
+    <div className="object-modal-overlay" onClick={onClose}>
+      <div className="object-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="object-modal-header">
+          <h3><span>🗄️</span> New Database</h3>
+          <button className="object-modal-close-btn" onClick={onClose} type="button">×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="object-modal-body">
+            {error && <Notice kind="error">{error}</Notice>}
+            <div className="form-group">
+              <label className="form-label">Database Identifier</label>
+              <input
+                className="form-input"
+                type="text"
+                autoFocus
+                placeholder="e.g. sensor_stream, production_ledger"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setError(null);
+                }}
+              />
+              <div className="form-hint">Unique alphanumeric catalog name (snake_case recommended).</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Target Connection</label>
+              <select
+                className="form-input"
+                value={connId}
+                onChange={(e) => setConnId(e.target.value)}
+              >
+                {connections.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name} ({c.host}:{c.tnpPort})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Multi-Clock Coordinate Profile</label>
+              <select
+                className="form-input"
+                value={clockProfile}
+                onChange={(e) => setClockProfile(e.target.value)}
+              >
+                <option value="Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)">
+                  Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)
+                </option>
+                <option value="Physical Wall-Clock Only (UTC Nanoseconds)">
+                  Physical Wall-Clock Only (UTC Nanoseconds)
+                </option>
+                <option value="Logical Lamport Only (Deterministic Distributed Ordering)">
+                  Logical Lamport Only (Deterministic Distributed Ordering)
+                </option>
+                <option value="Multi-Dimensional Vector Clock (Multi-Region Cluster)">
+                  Multi-Dimensional Vector Clock (Multi-Region Cluster)
+                </option>
+              </select>
+              <div className="form-hint">Governs temporal axes and timestamp resolution in storage segments.</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Schema Archetype Template</label>
+              <select
+                className="form-input"
+                value={template}
+                onChange={(e) => setTemplate(e.target.value)}
+              >
+                <option value="Industrial IoT & Telemetry">Industrial IoT & Telemetry (Sensors, Turbines)</option>
+                <option value="Financial Ledger & Settlement">Financial Ledger & Settlement (Double-Entry, Transfers)</option>
+                <option value="System Security & Cryptographic Audit">System Security & Cryptographic Audit (Tokens, IAM)</option>
+                <option value="Standard / Blank">Standard / Blank Catalog</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Storage Architecture</label>
+              <div style={{ display: "flex", gap: "14px", marginTop: "4px" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "13px", color: "#e2e8f0" }}>
+                  <input
+                    type="radio"
+                    name="storageTarget"
+                    checked={storageTarget === "managed"}
+                    onChange={() => setStorageTarget("managed")}
+                  />
+                  TNP Daemon Managed
+                </label>
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer", fontSize: "13px", color: "#e2e8f0" }}>
+                  <input
+                    type="radio"
+                    name="storageTarget"
+                    checked={storageTarget === "embedded"}
+                    onChange={() => setStorageTarget("embedded")}
+                  />
+                  Local Embedded Directory
+                </label>
+              </div>
+            </div>
+
+            {storageTarget === "embedded" && (
+              <div className="form-group">
+                <label className="form-label">Embedded Store Path</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  placeholder="./data/my_database"
+                  value={path}
+                  onChange={(e) => setPath(e.target.value)}
+                />
+              </div>
+            )}
+          </div>
+
+          <div className="object-modal-footer">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Create Database
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface CreateTableModalProps {
+  isOpen: boolean;
+  activeDatabase: string;
+  onClose: () => void;
+  onCreate: (opts: NewTableOptions) => void;
+}
+
+function CreateTableModal({
+  isOpen,
+  activeDatabase,
+  onClose,
+  onCreate,
+}: CreateTableModalProps) {
+  if (!isOpen) return null;
+
+  const [name, setName] = useState("");
+  const [description, setDescription] = useState("");
+  const [fields, setFields] = useState<TableColumn[]>([
+    { name: "id", type: "Utf8", indexed: true },
+    { name: "timestamp_utc", type: "Timestamp", indexed: true },
+    { name: "value", type: "Float64", indexed: false },
+    { name: "status", type: "Utf8", indexed: true },
+  ]);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleAddField = () => {
+    setFields((prev) => [
+      ...prev,
+      { name: `field_${prev.length + 1}`, type: "Utf8", indexed: false },
+    ]);
+  };
+
+  const handleRemoveField = (index: number) => {
+    if (fields.length <= 1) return;
+    setFields((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleFieldChange = (index: number, key: keyof TableColumn, val: any) => {
+    setFields((prev) =>
+      prev.map((f, i) => (i === index ? { ...f, [key]: val } : f))
+    );
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Table name is required.");
+      return;
+    }
+    onCreate({
+      databaseName: activeDatabase,
+      name: name.trim(),
+      description: description.trim() || `Table ${name.trim()}`,
+      fields,
+    });
+  };
+
+  return (
+    <div className="object-modal-overlay" onClick={onClose}>
+      <div className="object-modal-card" style={{ maxWidth: "640px" }} onClick={(e) => e.stopPropagation()}>
+        <div className="object-modal-header">
+          <h3><span>⊞</span> New Table</h3>
+          <button className="object-modal-close-btn" onClick={onClose} type="button">×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="object-modal-body">
+            {error && <Notice kind="error">{error}</Notice>}
+            <div style={{ display: "flex", gap: "12px" }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Table Name</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  autoFocus
+                  placeholder="e.g. TurbineVibrations"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setError(null);
+                  }}
+                />
+              </div>
+              <div className="form-group" style={{ width: "160px" }}>
+                <label className="form-label">Target Database</label>
+                <div style={{ padding: "8px 12px", background: "rgba(255,255,255,0.04)", borderRadius: "var(--radius-sm)", color: "#a5b4fc", fontWeight: 600, fontSize: "12px", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  🗄️ {activeDatabase}
+                </div>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Brief table semantics and purpose"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+
+            <div className="fields-editor-container">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <label className="form-label" style={{ margin: 0 }}>Column Definitions</label>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  style={{ padding: "2px 8px", fontSize: "11px" }}
+                  onClick={handleAddField}
+                >
+                  + Add Column
+                </button>
+              </div>
+              <div style={{ maxHeight: "200px", overflowY: "auto", border: "1px solid rgba(255,255,255,0.08)", borderRadius: "var(--radius-sm)" }}>
+                <table className="fields-editor-table">
+                  <thead>
+                    <tr>
+                      <th>Column Name</th>
+                      <th>Data Type</th>
+                      <th style={{ textAlign: "center", width: "70px" }}>Indexed</th>
+                      <th style={{ width: "40px" }}></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {fields.map((f, idx) => (
+                      <tr key={idx}>
+                        <td>
+                          <input
+                            className="form-input"
+                            style={{ padding: "4px 8px", fontSize: "12px" }}
+                            value={f.name}
+                            onChange={(e) => handleFieldChange(idx, "name", e.target.value)}
+                          />
+                        </td>
+                        <td>
+                          <select
+                            className="form-input"
+                            style={{ padding: "4px 8px", fontSize: "12px" }}
+                            value={f.type}
+                            onChange={(e) => handleFieldChange(idx, "type", e.target.value)}
+                          >
+                            <option value="Utf8">Utf8 (String)</option>
+                            <option value="Float64">Float64 (Float)</option>
+                            <option value="Int64">Int64 (Integer)</option>
+                            <option value="Decimal128">Decimal128 (Currency)</option>
+                            <option value="Boolean">Boolean</option>
+                            <option value="Timestamp">Timestamp</option>
+                          </select>
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          <input
+                            type="checkbox"
+                            checked={f.indexed}
+                            onChange={(e) => handleFieldChange(idx, "indexed", e.target.checked)}
+                          />
+                        </td>
+                        <td style={{ textAlign: "center" }}>
+                          {fields.length > 1 && (
+                            <button
+                              type="button"
+                              className="tree-item-del-btn"
+                              onClick={() => handleRemoveField(idx)}
+                              title="Delete column"
+                            >
+                              🗑
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="object-modal-footer">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Create Table
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface CreateQueryModalProps {
+  isOpen: boolean;
+  activeDatabase: string;
+  onClose: () => void;
+  onCreate: (opts: NewQueryOptions) => void;
+}
+
+function CreateQueryModal({
+  isOpen,
+  activeDatabase,
+  onClose,
+  onCreate,
+}: CreateQueryModalProps) {
+  if (!isOpen) return null;
+
+  const [name, setName] = useState("");
+  const [format, setFormat] = useState<"sql" | "temql">("sql");
+  const [queryText, setQueryText] = useState(
+    "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 50"
+  );
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Query title is required.");
+      return;
+    }
+    onCreate({
+      databaseName: activeDatabase,
+      name: name.trim(),
+      format,
+      queryText,
+    });
+  };
+
+  return (
+    <div className="object-modal-overlay" onClick={onClose}>
+      <div className="object-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="object-modal-header">
+          <h3><span>⚡</span> New Saved Query</h3>
+          <button className="object-modal-close-btn" onClick={onClose} type="button">×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="object-modal-body">
+            {error && <Notice kind="error">{error}</Notice>}
+            <div style={{ display: "flex", gap: "12px" }}>
+              <div className="form-group" style={{ flex: 1 }}>
+                <label className="form-label">Query Title</label>
+                <input
+                  className="form-input"
+                  type="text"
+                  autoFocus
+                  placeholder="e.g. Anomaly Detection Scan"
+                  value={name}
+                  onChange={(e) => {
+                    setName(e.target.value);
+                    setError(null);
+                  }}
+                />
+              </div>
+              <div className="form-group" style={{ width: "120px" }}>
+                <label className="form-label">Language</label>
+                <select
+                  className="form-input"
+                  value={format}
+                  onChange={(e) => {
+                    const next = e.target.value as "sql" | "temql";
+                    setFormat(next);
+                    if (next === "temql") {
+                      setQueryText("FROM temnion\nWHERE sequence > 0\nSELECT entity, schema, valid_time, known_time, sequence\nLIMIT 25");
+                    } else {
+                      setQueryText("SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 50");
+                    }
+                  }}
+                >
+                  <option value="sql">SQL</option>
+                  <option value="temql">TemQL</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Query Definition</label>
+              <textarea
+                className="code-editor"
+                style={{ height: "140px", fontFamily: "var(--font-mono)", fontSize: "12px" }}
+                spellCheck={false}
+                value={queryText}
+                onChange={(e) => setQueryText(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="object-modal-footer">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Save Query
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface CreateTimeModalProps {
+  isOpen: boolean;
+  activeDatabase: string;
+  onClose: () => void;
+  onCreate: (opts: NewTimeOptions) => void;
+}
+
+function CreateTimeModal({
+  isOpen,
+  activeDatabase,
+  onClose,
+  onCreate,
+}: CreateTimeModalProps) {
+  if (!isOpen) return null;
+
+  const [name, setName] = useState("");
+  const [clockType, setClockType] = useState<"physical-utc" | "lamport-dag" | "hybrid-vector">("physical-utc");
+  const [resolution, setResolution] = useState("1 ns (UTC wall-clock)");
+  const [description, setDescription] = useState("");
+  const [asOfTimestamp, setAsOfTimestamp] = useState("");
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Time horizon name is required.");
+      return;
+    }
+    onCreate({
+      databaseName: activeDatabase,
+      name: name.trim(),
+      clockType,
+      resolution,
+      description: description.trim() || `Temporal plane ${name.trim()}`,
+      asOfTimestamp: asOfTimestamp.trim() || undefined,
+    });
+  };
+
+  return (
+    <div className="object-modal-overlay" onClick={onClose}>
+      <div className="object-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="object-modal-header">
+          <h3><span>◴</span> New Time Horizon / Checkpoint</h3>
+          <button className="object-modal-close-btn" onClick={onClose} type="button">×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="object-modal-body">
+            {error && <Notice kind="error">{error}</Notice>}
+            <div className="form-group">
+              <label className="form-label">Time Horizon Name</label>
+              <input
+                className="form-input"
+                type="text"
+                autoFocus
+                placeholder="e.g. Physical Nanosecond Grid, Audit Checkpoint"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setError(null);
+                }}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Clock Coordinate Dimension</label>
+              <select
+                className="form-input"
+                value={clockType}
+                onChange={(e) => {
+                  const val = e.target.value as "physical-utc" | "lamport-dag" | "hybrid-vector";
+                  setClockType(val);
+                  if (val === "physical-utc") setResolution("1 ns (UTC wall-clock)");
+                  else if (val === "lamport-dag") setResolution("Lamport Monotonic Tick");
+                  else setResolution("Epoch Vector Marker");
+                }}
+              >
+                <option value="physical-utc">Physical Wall-Clock (UTC Nanoseconds)</option>
+                <option value="lamport-dag">Logical Plane (Lamport Sequence & Causal DAG)</option>
+                <option value="hybrid-vector">Hybrid Multi-Dimensional Vector</option>
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Temporal Resolution</label>
+              <input
+                className="form-input"
+                type="text"
+                value={resolution}
+                onChange={(e) => setResolution(e.target.value)}
+              />
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Point-in-Time Flashback Target (Optional)</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="2026-09-08T00:00:00Z"
+                value={asOfTimestamp}
+                onChange={(e) => setAsOfTimestamp(e.target.value)}
+              />
+              <div className="form-hint">Enables zero-copy AS OF SYSTEM_TIME historical flashback.</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Temporal semantics and boundary"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+              />
+            </div>
+          </div>
+
+          <div className="object-modal-footer">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Create Time Horizon
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+interface CreateBranchModalProps {
+  isOpen: boolean;
+  activeDatabase: string;
+  existingBranches: BranchObject[];
+  onClose: () => void;
+  onCreate: (opts: NewBranchOptions) => void;
+}
+
+function CreateBranchModal({
+  isOpen,
+  activeDatabase,
+  existingBranches,
+  onClose,
+  onCreate,
+}: CreateBranchModalProps) {
+  if (!isOpen) return null;
+
+  const [name, setName] = useState("");
+  const [parentId, setParentId] = useState<number>(existingBranches[0]?.id ?? 1);
+  const [forkSequence, setForkSequence] = useState<number>(10);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim()) {
+      setError("Branch name is required.");
+      return;
+    }
+    onCreate({
+      databaseName: activeDatabase,
+      name: name.trim(),
+      parentId,
+      forkSequence,
+      lifecycle: "Active",
+    });
+  };
+
+  return (
+    <div className="object-modal-overlay" onClick={onClose}>
+      <div className="object-modal-card" onClick={(e) => e.stopPropagation()}>
+        <div className="object-modal-header">
+          <h3><span>⑂</span> New Temporal Branch</h3>
+          <button className="object-modal-close-btn" onClick={onClose} type="button">×</button>
+        </div>
+        <form onSubmit={handleSubmit}>
+          <div className="object-modal-body">
+            {error && <Notice kind="error">{error}</Notice>}
+            <div className="form-group">
+              <label className="form-label">Branch Name</label>
+              <input
+                className="form-input"
+                type="text"
+                autoFocus
+                placeholder="e.g. experiment/high-frequency, hotfix-causal"
+                value={name}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  setError(null);
+                }}
+              />
+              <div className="form-hint">Bi-temporal fork identifier for concurrent causal timelines.</div>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Parent Branch</label>
+              <select
+                className="form-input"
+                value={parentId}
+                onChange={(e) => setParentId(Number(e.target.value))}
+              >
+                {existingBranches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name} (id: {b.id})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="form-group">
+              <label className="form-label">Fork Sequence Number</label>
+              <input
+                className="form-input"
+                type="number"
+                min={0}
+                value={forkSequence}
+                onChange={(e) => setForkSequence(Number(e.target.value))}
+              />
+              <div className="form-hint">The Lamport sequence point where this branch diverges.</div>
+            </div>
+          </div>
+
+          <div className="object-modal-footer">
+            <button className="btn btn-secondary btn-sm" type="button" onClick={onClose}>
+              Cancel
+            </button>
+            <button className="btn btn-primary btn-sm" type="submit">
+              Create Branch
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+/* ==========================================================================
    Navicat Action Ribbon Toolbar
    ========================================================================== */
 
 function NavicatRibbon({
   onNewConnection,
   onEditActiveConnection,
+  onNewDatabase,
+  onNewTable,
   onNewQuery,
-  onOpenTables,
-  onOpenTemporalPlane,
-  onOpenBranches,
+  onNewTime,
+  onNewBranch,
   onOpenIngest,
   onOpenStorage,
   onOpenGuide,
@@ -1407,10 +2171,11 @@ function NavicatRibbon({
 }: {
   onNewConnection: () => void;
   onEditActiveConnection: () => void;
+  onNewDatabase: () => void;
+  onNewTable: () => void;
   onNewQuery: () => void;
-  onOpenTables: () => void;
-  onOpenTemporalPlane: () => void;
-  onOpenBranches: () => void;
+  onNewTime: () => void;
+  onNewBranch: () => void;
   onOpenIngest: () => void;
   onOpenStorage: () => void;
   onOpenGuide: () => void;
@@ -1427,24 +2192,28 @@ function NavicatRibbon({
           <span className="ribbon-icon">⚙</span>
           <span className="ribbon-label">Properties</span>
         </button>
+        <button className="ribbon-btn" type="button" onClick={onNewDatabase} title="Create a new database under this connection">
+          <span className="ribbon-icon" style={{ color: "#a5b4fc" }}>🗄️</span>
+          <span className="ribbon-label">+ Database</span>
+        </button>
       </div>
 
       <div className="ribbon-group">
+        <button className="ribbon-btn" type="button" onClick={onNewTable} title="Create a new table under the active database">
+          <span className="ribbon-icon" style={{ color: "#a5b4fc" }}>⊞</span>
+          <span className="ribbon-label">+ Table</span>
+        </button>
         <button className="ribbon-btn" type="button" onClick={onNewQuery} title="Open new query editor tab">
           <span className="ribbon-icon" style={{ color: "#38bdf8" }}>⚡</span>
-          <span className="ribbon-label">New Query</span>
+          <span className="ribbon-label">+ Query</span>
         </button>
-        <button className="ribbon-btn" type="button" onClick={onOpenTables} title="Open schema and table designer">
-          <span className="ribbon-icon" style={{ color: "#a5b4fc" }}>⊞</span>
-          <span className="ribbon-label">Table</span>
-        </button>
-        <button className="ribbon-btn" type="button" onClick={onOpenTemporalPlane} title="Open bi-temporal plane visualizer">
+        <button className="ribbon-btn" type="button" onClick={onNewTime} title="Create a new time horizon or checkpoint">
           <span className="ribbon-icon" style={{ color: "#34d399" }}>◴</span>
-          <span className="ribbon-label">Time Travel</span>
+          <span className="ribbon-label">+ Time</span>
         </button>
-        <button className="ribbon-btn" type="button" onClick={onOpenBranches} title="Open branch and causality DAG">
+        <button className="ribbon-btn" type="button" onClick={onNewBranch} title="Create a new causal branch fork">
           <span className="ribbon-icon" style={{ color: "#c084fc" }}>⑂</span>
-          <span className="ribbon-label">Branches</span>
+          <span className="ribbon-label">+ Branch</span>
         </button>
       </div>
 
@@ -1477,42 +2246,89 @@ function NavicatRibbon({
    Navicat Object Explorer Database Tree
    ========================================================================== */
 
-function ObjectExplorerTree({
-  connections,
-  activeConnId,
-  onSelectConnection,
-  onEditConnection,
-  onDeleteConnection,
-  onNewConnection,
-  onOpenTable,
-  onOpenBranches,
-  onOpenStorage,
-}: {
+interface ObjectExplorerTreeProps {
   connections: ConnectionProfile[];
   activeConnId: string;
+  databases: DatabaseInfo[];
+  tables: TableDefinition[];
+  savedQueries: SavedQuery[];
+  timeObjects: TimeObject[];
+  branches: BranchObject[];
   onSelectConnection: (id: string) => void;
   onEditConnection: (conn: ConnectionProfile) => void;
   onDeleteConnection: (id: string) => void;
   onNewConnection: () => void;
-  onOpenTable: (schemaName: string) => void;
-  onOpenBranches: () => void;
+  onSelectDatabase: (name: string, connectionId?: string) => void;
+  onNewDatabase: (connectionId?: string) => void;
+  onDeleteDatabase: (name: string, connectionId?: string) => void;
+  onNewTable: (databaseName?: string) => void;
+  onSelectTable: (tableName: string) => void;
+  onDeleteTable: (name: string, databaseName?: string) => void;
+  onNewQuery: (databaseName?: string) => void;
+  onSelectSavedQuery: (query: SavedQuery) => void;
+  onDeleteSavedQuery: (id: string) => void;
+  onNewTime: (databaseName?: string) => void;
+  onSelectTime: (timeObj: TimeObject) => void;
+  onDeleteTime: (id: string) => void;
+  onNewBranch: (databaseName?: string) => void;
+  onSelectBranch: (branch: BranchObject) => void;
+  onDeleteBranch: (name: string, databaseName?: string) => void;
   onOpenStorage: () => void;
-}) {
+}
+
+function ObjectExplorerTree({
+  connections,
+  activeConnId,
+  databases,
+  tables,
+  savedQueries,
+  timeObjects,
+  branches,
+  onSelectConnection,
+  onEditConnection,
+  onDeleteConnection,
+  onNewConnection,
+  onSelectDatabase,
+  onNewDatabase,
+  onDeleteDatabase,
+  onNewTable,
+  onSelectTable,
+  onDeleteTable,
+  onNewQuery,
+  onSelectSavedQuery,
+  onDeleteSavedQuery,
+  onNewTime,
+  onSelectTime,
+  onDeleteTime,
+  onNewBranch,
+  onSelectBranch,
+  onDeleteBranch,
+  onOpenStorage,
+}: ObjectExplorerTreeProps) {
   const [expandedConns, setExpandedConns] = useState<Record<string, boolean>>({
     "conn-local-primary": true,
   });
-  const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({
-    tables: true,
-    branches: true,
-    storage: false,
+  const [expandedDbs, setExpandedDbs] = useState<Record<string, boolean>>({
+    "conn-local-primary:temnion_default": true,
+  });
+  const [expandedFolders, setExpandedFolders] = useState<Record<string, boolean>>({
+    "conn-local-primary:temnion_default-tables": true,
+    "conn-local-primary:temnion_default-queries": true,
+    "conn-local-primary:temnion_default-time": false,
+    "conn-local-primary:temnion_default-branches": false,
+    "conn-local-primary:temnion_default-storage": false,
   });
 
   const toggleConn = (id: string) => {
     setExpandedConns((prev) => ({ ...prev, [id]: !prev[id] }));
   };
 
-  const toggleSection = (key: string) => {
-    setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
+  const toggleDb = (dbKey: string) => {
+    setExpandedDbs((prev) => ({ ...prev, [dbKey]: !prev[dbKey] }));
+  };
+
+  const toggleFolder = (folderKey: string) => {
+    setExpandedFolders((prev) => ({ ...prev, [folderKey]: !prev[folderKey] }));
   };
 
   return (
@@ -1535,6 +2351,7 @@ function ObjectExplorerTree({
         {connections.map((conn) => {
           const isExpanded = !!expandedConns[conn.id];
           const isActive = conn.id === activeConnId;
+          const connDbs = databases.filter((d) => d.connectionId === conn.id);
 
           return (
             <div className="tree-node-root" key={conn.id}>
@@ -1551,11 +2368,19 @@ function ObjectExplorerTree({
                     className={`tree-status-dot ${isActive ? "connected" : "disconnected"}`}
                     title={isActive ? "Connected" : "Disconnected"}
                   />
-                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "155px" }}>
+                  <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "135px" }}>
                     {conn.name}
                   </span>
                 </div>
                 <div className="tree-conn-actions" onClick={(e) => e.stopPropagation()}>
+                  <button
+                    className="tree-action-icon-btn"
+                    title="New Database under this connection"
+                    onClick={() => onNewDatabase(conn.id)}
+                    type="button"
+                  >
+                    +
+                  </button>
                   <button
                     className="tree-action-icon-btn"
                     title="Edit Connection Properties"
@@ -1589,118 +2414,345 @@ function ObjectExplorerTree({
 
               {isExpanded && (
                 <div className="tree-children">
-                  {/* Database Node */}
-                  <div className="tree-sub-folder" style={{ color: "#c7d2fe", fontWeight: 600 }}>
-                    <span>🗄️</span>
-                    <span>{conn.database}</span>
-                  </div>
+                  {connDbs.map((db) => {
+                    const isDbActive = isActive && conn.database.toLowerCase() === db.name.toLowerCase();
+                    const dbKey = `${conn.id}:${db.name}`;
+                    const isDbExpanded = expandedDbs[dbKey] ?? (isDbActive || connDbs.length === 1);
+                    const dbTables = tables.filter((t) => t.databaseName.toLowerCase() === db.name.toLowerCase());
+                    const dbQueries = savedQueries.filter((q) => q.databaseName.toLowerCase() === db.name.toLowerCase());
+                    const dbTimes = timeObjects.filter((t) => t.databaseName.toLowerCase() === db.name.toLowerCase());
+                    const dbBranches = branches.filter((b) => b.databaseName.toLowerCase() === db.name.toLowerCase());
 
-                  {/* Tables Node */}
-                  <div style={{ paddingLeft: "12px" }}>
-                    <div
-                      className="tree-sub-folder"
-                      onClick={() => toggleSection(`${conn.id}-tables`)}
-                    >
-                      <span style={{ fontSize: "9px" }}>
-                        {expandedSections[`${conn.id}-tables`] !== false ? "▼" : "▶"}
-                      </span>
-                      <span>📁</span>
-                      <span>Tables</span>
-                      <span className="tree-count-badge">4</span>
-                    </div>
+                    return (
+                      <div key={db.id || db.name} style={{ marginBottom: "3px" }}>
+                        {/* Database Node */}
+                        <div
+                          className={`tree-db-folder ${isDbActive ? "active-db" : ""}`}
+                          onClick={() => {
+                            toggleDb(dbKey);
+                            if (!isDbActive) {
+                              onSelectDatabase(db.name, conn.id);
+                            }
+                          }}
+                          title={`Database: ${db.name} (${db.clockProfile})`}
+                        >
+                          <div className="tree-db-left">
+                            <span style={{ fontSize: "9px", color: "#94a3b8", width: "10px" }}>
+                              {isDbExpanded ? "▼" : "▶"}
+                            </span>
+                            <span>🗄️</span>
+                            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: "115px" }}>
+                              {db.name}
+                            </span>
+                            {isDbActive && <span className="tree-db-badge">active</span>}
+                          </div>
+                          <div className="tree-db-actions" onClick={(e) => e.stopPropagation()}>
+                            {!db.isDefault && (
+                              <button
+                                className="tree-item-del-btn"
+                                title={`Delete Database ${db.name}`}
+                                onClick={() => onDeleteDatabase(db.name, conn.id)}
+                                type="button"
+                              >
+                                🗑
+                              </button>
+                            )}
+                          </div>
+                        </div>
 
-                    {expandedSections[`${conn.id}-tables`] !== false && (
-                      <div>
-                        <div
-                          className="tree-leaf-item"
-                          onClick={() => onOpenTable("SensorTelemetry")}
-                        >
-                          <span>⊞</span>
-                          <span>SensorTelemetry</span>
-                        </div>
-                        <div
-                          className="tree-leaf-item"
-                          onClick={() => onOpenTable("FinancialLedger")}
-                        >
-                          <span>⊞</span>
-                          <span>FinancialLedger</span>
-                        </div>
-                        <div
-                          className="tree-leaf-item"
-                          onClick={() => onOpenTable("SystemSecurityAudit")}
-                        >
-                          <span>⊞</span>
-                          <span>SystemSecurityAudit</span>
-                        </div>
-                        <div
-                          className="tree-leaf-item"
-                          onClick={() => onOpenTable("StateSnapshot")}
-                        >
-                          <span>⊞</span>
-                          <span>StateSnapshot</span>
-                        </div>
+                        {isDbExpanded && (
+                          <div style={{ paddingLeft: "10px" }}>
+                            {/* Tables Folder */}
+                            <div>
+                              <div
+                                className="tree-category-folder"
+                                onClick={() => toggleFolder(`${dbKey}-tables`)}
+                              >
+                                <div className="tree-category-left">
+                                  <span style={{ fontSize: "8px" }}>
+                                    {expandedFolders[`${dbKey}-tables`] !== false ? "▼" : "▶"}
+                                  </span>
+                                  <span>📁</span>
+                                  <span>Tables</span>
+                                  <span className="tree-count-badge">{dbTables.length}</span>
+                                </div>
+                                <div className="tree-category-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    className="tree-add-btn"
+                                    title="New Table"
+                                    type="button"
+                                    onClick={() => onNewTable(db.name)}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              {expandedFolders[`${dbKey}-tables`] !== false && (
+                                <div>
+                                  {dbTables.map((t) => (
+                                    <div
+                                      key={t.id || t.name}
+                                      className="tree-leaf-item-container"
+                                      onClick={() => onSelectTable(t.name)}
+                                      title={`${t.name}: ${t.description}`}
+                                    >
+                                      <div className="tree-leaf-item-left">
+                                        <span style={{ color: "#a5b4fc" }}>⊞</span>
+                                        <span>{t.name}</span>
+                                      </div>
+                                      <div className="tree-leaf-actions" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                          className="tree-item-del-btn"
+                                          title={`Delete Table ${t.name}`}
+                                          type="button"
+                                          onClick={() => onDeleteTable(t.name, db.name)}
+                                        >
+                                          🗑
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {dbTables.length === 0 && (
+                                    <div style={{ padding: "3px 0 3px 26px", fontSize: "11px", color: "#64748b", fontStyle: "italic" }}>
+                                      No tables yet
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Queries Folder */}
+                            <div>
+                              <div
+                                className="tree-category-folder"
+                                onClick={() => toggleFolder(`${dbKey}-queries`)}
+                              >
+                                <div className="tree-category-left">
+                                  <span style={{ fontSize: "8px" }}>
+                                    {expandedFolders[`${dbKey}-queries`] !== false ? "▼" : "▶"}
+                                  </span>
+                                  <span>📁</span>
+                                  <span>Queries</span>
+                                  <span className="tree-count-badge">{dbQueries.length}</span>
+                                </div>
+                                <div className="tree-category-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    className="tree-add-btn"
+                                    title="New Query"
+                                    type="button"
+                                    onClick={() => onNewQuery(db.name)}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              {expandedFolders[`${dbKey}-queries`] !== false && (
+                                <div>
+                                  {dbQueries.map((q) => (
+                                    <div
+                                      key={q.id}
+                                      className="tree-leaf-item-container"
+                                      onClick={() => onSelectSavedQuery(q)}
+                                      title={q.name}
+                                    >
+                                      <div className="tree-leaf-item-left">
+                                        <span style={{ color: "#38bdf8" }}>⚡</span>
+                                        <span>{q.name}</span>
+                                      </div>
+                                      <div className="tree-leaf-actions" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                          className="tree-item-del-btn"
+                                          title={`Delete Query ${q.name}`}
+                                          type="button"
+                                          onClick={() => onDeleteSavedQuery(q.id)}
+                                        >
+                                          🗑
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {dbQueries.length === 0 && (
+                                    <div style={{ padding: "3px 0 3px 26px", fontSize: "11px", color: "#64748b", fontStyle: "italic" }}>
+                                      No saved queries
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Time Folder */}
+                            <div>
+                              <div
+                                className="tree-category-folder"
+                                onClick={() => toggleFolder(`${dbKey}-time`)}
+                              >
+                                <div className="tree-category-left">
+                                  <span style={{ fontSize: "8px" }}>
+                                    {expandedFolders[`${dbKey}-time`] ? "▼" : "▶"}
+                                  </span>
+                                  <span>📁</span>
+                                  <span>Time</span>
+                                  <span className="tree-count-badge">{dbTimes.length}</span>
+                                </div>
+                                <div className="tree-category-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    className="tree-add-btn"
+                                    title="New Time Horizon / Checkpoint"
+                                    type="button"
+                                    onClick={() => onNewTime(db.name)}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              {expandedFolders[`${dbKey}-time`] && (
+                                <div>
+                                  {dbTimes.map((t) => (
+                                    <div
+                                      key={t.id}
+                                      className="tree-leaf-item-container"
+                                      onClick={() => onSelectTime(t)}
+                                      title={`${t.name} (${t.resolution}): ${t.description}`}
+                                    >
+                                      <div className="tree-leaf-item-left">
+                                        <span style={{ color: "#34d399" }}>◴</span>
+                                        <span>{t.name}</span>
+                                      </div>
+                                      <div className="tree-leaf-actions" onClick={(e) => e.stopPropagation()}>
+                                        <button
+                                          className="tree-item-del-btn"
+                                          title={`Delete Time Object ${t.name}`}
+                                          type="button"
+                                          onClick={() => onDeleteTime(t.id)}
+                                        >
+                                          🗑
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ))}
+                                  {dbTimes.length === 0 && (
+                                    <div style={{ padding: "3px 0 3px 26px", fontSize: "11px", color: "#64748b", fontStyle: "italic" }}>
+                                      No time horizons
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Branches Folder */}
+                            <div>
+                              <div
+                                className="tree-category-folder"
+                                onClick={() => toggleFolder(`${dbKey}-branches`)}
+                              >
+                                <div className="tree-category-left">
+                                  <span style={{ fontSize: "8px" }}>
+                                    {expandedFolders[`${dbKey}-branches`] ? "▼" : "▶"}
+                                  </span>
+                                  <span>📁</span>
+                                  <span>Branches</span>
+                                  <span className="tree-count-badge">{dbBranches.length}</span>
+                                </div>
+                                <div className="tree-category-actions" onClick={(e) => e.stopPropagation()}>
+                                  <button
+                                    className="tree-add-btn"
+                                    title="New Branch"
+                                    type="button"
+                                    onClick={() => onNewBranch(db.name)}
+                                  >
+                                    +
+                                  </button>
+                                </div>
+                              </div>
+
+                              {expandedFolders[`${dbKey}-branches`] && (
+                                <div>
+                                  {dbBranches.map((b) => (
+                                    <div
+                                      key={b.id || b.name}
+                                      className="tree-leaf-item-container"
+                                      onClick={() => onSelectBranch(b)}
+                                      title={`Branch: ${b.name} (${b.lifecycle})`}
+                                    >
+                                      <div className="tree-leaf-item-left">
+                                        {b.name === "main" ? (
+                                          <span style={{ color: "#34d399" }}>●</span>
+                                        ) : (
+                                          <span style={{ color: "#c084fc" }}>⑂</span>
+                                        )}
+                                        <span style={b.name === "main" ? { color: "#a7f3d0", fontWeight: 600 } : {}}>
+                                          {b.name} {b.name === "main" ? "(active)" : ""}
+                                        </span>
+                                      </div>
+                                      <div className="tree-leaf-actions" onClick={(e) => e.stopPropagation()}>
+                                        {b.name !== "main" && (
+                                          <button
+                                            className="tree-item-del-btn"
+                                            title={`Delete Branch ${b.name}`}
+                                            type="button"
+                                            onClick={() => onDeleteBranch(b.name, db.name)}
+                                          >
+                                            🗑
+                                          </button>
+                                        )}
+                                      </div>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Storage & Engine Folder */}
+                            <div>
+                              <div
+                                className="tree-category-folder"
+                                onClick={() => toggleFolder(`${dbKey}-storage`)}
+                              >
+                                <div className="tree-category-left">
+                                  <span style={{ fontSize: "8px" }}>
+                                    {expandedFolders[`${dbKey}-storage`] ? "▼" : "▶"}
+                                  </span>
+                                  <span>📁</span>
+                                  <span>Storage & Engine</span>
+                                </div>
+                              </div>
+
+                              {expandedFolders[`${dbKey}-storage`] && (
+                                <div>
+                                  <div className="tree-leaf-item-container" onClick={onOpenStorage}>
+                                    <div className="tree-leaf-item-left">
+                                      <span>📄</span>
+                                      <span>Active WAL Prefix</span>
+                                    </div>
+                                  </div>
+                                  <div className="tree-leaf-item-container" onClick={onOpenStorage}>
+                                    <div className="tree-leaf-item-left">
+                                      <span>📄</span>
+                                      <span>SegmentManifest</span>
+                                    </div>
+                                  </div>
+                                  <div className="tree-leaf-item-container" onClick={onOpenStorage}>
+                                    <div className="tree-leaf-item-left">
+                                      <span>📄</span>
+                                      <span>TSF Segments</span>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    )}
-
-                    {/* Branches Node */}
-                    <div
-                      className="tree-sub-folder"
-                      onClick={() => toggleSection(`${conn.id}-branches`)}
-                    >
-                      <span style={{ fontSize: "9px" }}>
-                        {expandedSections[`${conn.id}-branches`] !== false ? "▼" : "▶"}
-                      </span>
-                      <span>📁</span>
-                      <span>Branches & DAG</span>
-                      <span className="tree-count-badge">3</span>
+                    );
+                  })}
+                  {connDbs.length === 0 && (
+                    <div style={{ padding: "6px 14px", fontSize: "11px", color: "#64748b", fontStyle: "italic" }}>
+                      No databases registered. Click + to create one.
                     </div>
-
-                    {expandedSections[`${conn.id}-branches`] !== false && (
-                      <div>
-                        <div className="tree-leaf-item" onClick={onOpenBranches}>
-                          <span style={{ color: "#34d399" }}>●</span>
-                          <span style={{ color: "#a7f3d0", fontWeight: 600 }}>main (active)</span>
-                        </div>
-                        <div className="tree-leaf-item" onClick={onOpenBranches}>
-                          <span style={{ color: "#c084fc" }}>⑂</span>
-                          <span>staging</span>
-                        </div>
-                        <div className="tree-leaf-item" onClick={onOpenBranches}>
-                          <span style={{ color: "#c084fc" }}>⑂</span>
-                          <span>hotfix-causal</span>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Storage & Engine Node */}
-                    <div
-                      className="tree-sub-folder"
-                      onClick={() => toggleSection(`${conn.id}-storage`)}
-                    >
-                      <span style={{ fontSize: "9px" }}>
-                        {expandedSections[`${conn.id}-storage`] ? "▼" : "▶"}
-                      </span>
-                      <span>📁</span>
-                      <span>Storage & Engine</span>
-                    </div>
-
-                    {expandedSections[`${conn.id}-storage`] && (
-                      <div>
-                        <div className="tree-leaf-item" onClick={onOpenStorage}>
-                          <span>📄</span>
-                          <span>Active WAL Prefix</span>
-                        </div>
-                        <div className="tree-leaf-item" onClick={onOpenStorage}>
-                          <span>📄</span>
-                          <span>SegmentManifest</span>
-                        </div>
-                        <div className="tree-leaf-item" onClick={onOpenStorage}>
-                          <span>📄</span>
-                          <span>TSF Segments</span>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1944,6 +2996,61 @@ export function App() {
 
   const [editingConnection, setEditingConnection] = useState<ConnectionProfile | null>(null);
 
+  // Database Catalog and Objects queries
+  const databasesQuery = useQuery({
+    queryKey: ["databases"],
+    queryFn: () => listDatabases(),
+  });
+  const databases = databasesQuery.data ?? [
+    {
+      id: "db-local-default",
+      name: "temnion_default",
+      connectionId: "conn-local-primary",
+      clockProfile: "Canonical Clock #1 (Physical UTC + Lamport + Causal DAG)",
+      template: "Industrial IoT & Telemetry",
+      storageTarget: "managed" as const,
+      tablesCount: 4,
+      queriesCount: 3,
+      timeObjectsCount: 3,
+      branchesCount: 3,
+      eventCount: 28,
+      isDefault: true,
+      createdAt: "System Bootstrap",
+    },
+  ];
+
+  const tablesQuery = useQuery({
+    queryKey: ["tables", activeConnection.database],
+    queryFn: () => listTables(activeConnection.database),
+  });
+  const tablesData = tablesQuery.data ?? [];
+
+  const savedQueriesQuery = useQuery({
+    queryKey: ["saved-queries", activeConnection.database],
+    queryFn: () => listSavedQueries(activeConnection.database),
+  });
+  const savedQueriesData = savedQueriesQuery.data ?? [];
+
+  const timeObjectsQuery = useQuery({
+    queryKey: ["time-objects", activeConnection.database],
+    queryFn: () => listTimeObjects(activeConnection.database),
+  });
+  const timeObjectsData = timeObjectsQuery.data ?? [];
+
+  const branchesQuery = useQuery({
+    queryKey: ["branch-objects", activeConnection.database],
+    queryFn: () => listBranchObjects(activeConnection.database),
+  });
+  const branchObjectsData = branchesQuery.data ?? [];
+
+  // Modal dialog states
+  const [createDbOpen, setCreateDbOpen] = useState(false);
+  const [createDbInitialConnId, setCreateDbInitialConnId] = useState<string>("conn-local-primary");
+  const [createTableOpen, setCreateTableOpen] = useState(false);
+  const [createQueryOpen, setCreateQueryOpen] = useState(false);
+  const [createTimeOpen, setCreateTimeOpen] = useState(false);
+  const [createBranchOpen, setCreateBranchOpen] = useState(false);
+
   const [tabs, setTabs] = useState<StudioTab[]>([
     { id: "tab-guide", type: "guide", title: "How-To Guide", icon: "📖" },
     { id: "tab-query-1", type: "query", title: "Query 1", icon: "⚡" },
@@ -1951,11 +3058,17 @@ export function App() {
   const [activeTabId, setActiveTabId] = useState<string>("tab-query-1");
   const [queryCount, setQueryCount] = useState<number>(1);
 
+  // Connection mutations
   const switchMutation = useMutation({
     mutationFn: (id: string) => setActiveConnection(id),
     onSuccess: (active) => {
       setActiveConnId(active.id);
       queryClient.invalidateQueries({ queryKey: ["engine-status"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+      queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+      queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
     },
   });
 
@@ -1970,6 +3083,117 @@ export function App() {
   const deleteMutation = useMutation({
     mutationFn: (id: string) => deleteConnection(id),
     onSuccess: (updated) => queryClient.setQueryData(["connections"], updated),
+  });
+
+  // Database mutations
+  const createDbMutation = useMutation({
+    mutationFn: (opts: CreateDatabaseOptions) => createDatabaseCatalog(opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+      queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+      queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
+      setCreateDbOpen(false);
+    },
+  });
+
+  const deleteDbMutation = useMutation({
+    mutationFn: ({ name, connId }: { name: string; connId?: string }) =>
+      deleteDatabaseCatalog(name, connId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+      queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+      queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
+    },
+  });
+
+  const switchDbMutation = useMutation({
+    mutationFn: ({ name, connId }: { name: string; connId?: string }) =>
+      switchActiveDatabase(name, connId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      queryClient.invalidateQueries({ queryKey: ["connections"] });
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+      queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+      queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
+    },
+  });
+
+  // Database objects mutations
+  const createTableMutation = useMutation({
+    mutationFn: (opts: NewTableOptions) => createTable(opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      setCreateTableOpen(false);
+    },
+  });
+
+  const deleteTableMutation = useMutation({
+    mutationFn: ({ name, dbName }: { name: string; dbName?: string }) =>
+      deleteTable(name, dbName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tables"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+    },
+  });
+
+  const createQueryMutation = useMutation({
+    mutationFn: (opts: NewQueryOptions) => saveQuery(opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      setCreateQueryOpen(false);
+    },
+  });
+
+  const deleteQueryMutation = useMutation({
+    mutationFn: (id: string) => deleteSavedQuery(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["saved-queries"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+    },
+  });
+
+  const createTimeMutation = useMutation({
+    mutationFn: (opts: NewTimeOptions) => createTimeObject(opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      setCreateTimeOpen(false);
+    },
+  });
+
+  const deleteTimeMutation = useMutation({
+    mutationFn: (id: string) => deleteTimeObject(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["time-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+    },
+  });
+
+  const createBranchMutation = useMutation({
+    mutationFn: (opts: NewBranchOptions) => createBranchObject(opts),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+      setCreateBranchOpen(false);
+    },
+  });
+
+  const deleteBranchMutation = useMutation({
+    mutationFn: ({ name, dbName }: { name: string; dbName?: string }) =>
+      deleteBranchObject(name, dbName),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["branch-objects"] });
+      queryClient.invalidateQueries({ queryKey: ["databases"] });
+    },
   });
 
   const openTab = (
@@ -2110,10 +3334,14 @@ export function App() {
             })
           }
           onEditActiveConnection={() => setEditingConnection(activeConnection)}
-          onNewQuery={() => handleNewQueryTab()}
-          onOpenTables={() => openTab("schemas", "Schema Catalog", "⊞")}
-          onOpenTemporalPlane={() => openTab("history", "Temporal Plane", "◴")}
-          onOpenBranches={() => openTab("causality", "Branches & DAG", "⑂")}
+          onNewDatabase={() => {
+            setCreateDbInitialConnId(activeConnId);
+            setCreateDbOpen(true);
+          }}
+          onNewTable={() => setCreateTableOpen(true)}
+          onNewQuery={() => setCreateQueryOpen(true)}
+          onNewTime={() => setCreateTimeOpen(true)}
+          onNewBranch={() => setCreateBranchOpen(true)}
           onOpenIngest={() => openTab("ingest", "Ingestion", "⇧")}
           onOpenStorage={() => openTab("metrics", "Storage & Health", "▥")}
           onOpenGuide={() => openTab("guide", "How-To Guide", "📖")}
@@ -2140,6 +3368,11 @@ export function App() {
         <ObjectExplorerTree
           connections={connections}
           activeConnId={activeConnId}
+          databases={databases}
+          tables={tablesData}
+          savedQueries={savedQueriesData}
+          timeObjects={timeObjectsData}
+          branches={branchObjectsData}
           onSelectConnection={(id) => switchMutation.mutate(id)}
           onEditConnection={(conn) => setEditingConnection(conn)}
           onDeleteConnection={(id) => deleteMutation.mutate(id)}
@@ -2159,8 +3392,44 @@ export function App() {
               serverVersion: "TNP v1 (temniond 0.1.0)",
             })
           }
-          onOpenTable={(tableName) => openTab("table", `Table: ${tableName}`, "⊞", { tableName })}
-          onOpenBranches={() => openTab("causality", "Branches & DAG", "⑂")}
+          onSelectDatabase={(name, connId) => switchDbMutation.mutate({ name, connId })}
+          onNewDatabase={(connId) => {
+            setCreateDbInitialConnId(connId || activeConnId);
+            setCreateDbOpen(true);
+          }}
+          onDeleteDatabase={(name, connId) => deleteDbMutation.mutate({ name, connId })}
+          onNewTable={(dbName) => {
+            if (dbName && dbName.toLowerCase() !== activeConnection.database.toLowerCase()) {
+              switchDbMutation.mutate({ name: dbName });
+            }
+            setCreateTableOpen(true);
+          }}
+          onSelectTable={(tableName) => openTab("table", `Table: ${tableName}`, "⊞", { tableName })}
+          onDeleteTable={(name, dbName) => deleteTableMutation.mutate({ name, dbName })}
+          onNewQuery={(dbName) => {
+            if (dbName && dbName.toLowerCase() !== activeConnection.database.toLowerCase()) {
+              switchDbMutation.mutate({ name: dbName });
+            }
+            setCreateQueryOpen(true);
+          }}
+          onSelectSavedQuery={(q) => handleNewQueryTab(q.queryText)}
+          onDeleteSavedQuery={(id) => deleteQueryMutation.mutate(id)}
+          onNewTime={(dbName) => {
+            if (dbName && dbName.toLowerCase() !== activeConnection.database.toLowerCase()) {
+              switchDbMutation.mutate({ name: dbName });
+            }
+            setCreateTimeOpen(true);
+          }}
+          onSelectTime={(_t) => openTab("history", "Temporal Plane", "◴")}
+          onDeleteTime={(id) => deleteTimeMutation.mutate(id)}
+          onNewBranch={(dbName) => {
+            if (dbName && dbName.toLowerCase() !== activeConnection.database.toLowerCase()) {
+              switchDbMutation.mutate({ name: dbName });
+            }
+            setCreateBranchOpen(true);
+          }}
+          onSelectBranch={(_b) => openTab("causality", "Branches & DAG", "⑂")}
+          onDeleteBranch={(name, dbName) => deleteBranchMutation.mutate({ name, dbName })}
           onOpenStorage={() => openTab("metrics", "Storage & Health", "▥")}
         />
 
@@ -2187,6 +3456,43 @@ export function App() {
           onSave={(updated) => saveMutation.mutate(updated)}
         />
       )}
+
+      <CreateDatabaseModal
+        isOpen={createDbOpen}
+        connections={connections}
+        initialConnectionId={createDbInitialConnId}
+        onClose={() => setCreateDbOpen(false)}
+        onCreate={(opts) => createDbMutation.mutate(opts)}
+      />
+
+      <CreateTableModal
+        isOpen={createTableOpen}
+        activeDatabase={activeConnection.database}
+        onClose={() => setCreateTableOpen(false)}
+        onCreate={(opts) => createTableMutation.mutate(opts)}
+      />
+
+      <CreateQueryModal
+        isOpen={createQueryOpen}
+        activeDatabase={activeConnection.database}
+        onClose={() => setCreateQueryOpen(false)}
+        onCreate={(opts) => createQueryMutation.mutate(opts)}
+      />
+
+      <CreateTimeModal
+        isOpen={createTimeOpen}
+        activeDatabase={activeConnection.database}
+        onClose={() => setCreateTimeOpen(false)}
+        onCreate={(opts) => createTimeMutation.mutate(opts)}
+      />
+
+      <CreateBranchModal
+        isOpen={createBranchOpen}
+        activeDatabase={activeConnection.database}
+        existingBranches={branchObjectsData}
+        onClose={() => setCreateBranchOpen(false)}
+        onCreate={(opts) => createBranchMutation.mutate(opts)}
+      />
     </div>
   );
 }
