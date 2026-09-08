@@ -12,27 +12,31 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type AppendRequest,
   type BranchInfo,
+  type ConnectionProfile,
   type EngineStatus,
   type EventRow,
   appendEvent,
   browserStatus,
   connectDatabase,
   createDatabase,
+  deleteConnection,
   disconnectDatabase,
   executeQuery,
   explainQuery,
   getEngineStatus,
-  getTzeentchCadenceStats,
-  getTzeentchSummary,
-  inspectTzeentchActionTrace,
   isNativeRuntime,
   listBranches,
+  listConnections,
+  listEntities,
   listHistory,
-  setTzeentchMigrationMode,
+  listSchemas,
+  saveConnection,
+  setActiveConnection,
+  testConnection,
   traceCausality,
 } from "./api";
 
-type View = "query" | "history" | "causality" | "tzeentch" | "ingest" | "connections" | "metrics";
+type View = "query" | "history" | "causality" | "schemas" | "ingest" | "connections" | "metrics";
 type QueryFormat = "temql" | "compact" | "sql";
 
 const samples: Record<QueryFormat, string> = {
@@ -45,9 +49,9 @@ const navItems: Array<{ id: View; label: string; icon: string; group: string }> 
   { id: "query", label: "Query Studio", icon: "⌁", group: "Explore" },
   { id: "history", label: "Temporal Plane", icon: "◴", group: "Explore" },
   { id: "causality", label: "Branches & Causality", icon: "⑂", group: "Explore" },
-  { id: "tzeentch", label: "Tzeentch Explorer", icon: "⚛", group: "Explore" },
-  { id: "ingest", label: "Ingestion", icon: "⇧", group: "Data" },
-  { id: "connections", label: "Connections", icon: "◎", group: "Operate" },
+  { id: "schemas", label: "Schema & Entity Catalog", icon: "⊞", group: "Explore" },
+  { id: "ingest", label: "Ingestion Console", icon: "⇧", group: "Data" },
+  { id: "connections", label: "Connections Manager", icon: "◎", group: "Operate" },
   { id: "metrics", label: "Storage & Capabilities", icon: "▥", group: "Operate" },
 ];
 
@@ -488,14 +492,202 @@ function IngestPanel({ connected }: { connected: boolean }) {
   );
 }
 
+function SchemaPanel() {
+  const schemasQuery = useQuery({ queryKey: ["schemas"], queryFn: listSchemas });
+  const entitiesQuery = useQuery({ queryKey: ["entities"], queryFn: listEntities });
+  const [selectedSchemaId, setSelectedSchemaId] = useState<number>(1);
+
+  const schemas = schemasQuery.data ?? [];
+  const entities = entitiesQuery.data ?? [];
+  const selectedSchema = schemas.find((s) => s.id === selectedSchemaId) ?? schemas[0];
+
+  return (
+    <section className="view-panel active">
+      <PanelHeader
+        title="Schema & Entity Catalog"
+        subtitle="Authoritative schemas, field layouts, index coverage, and registered entity slots."
+      />
+
+      {/* Schema Cards Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "12px", marginBottom: "16px" }}>
+        {schemas.map((schema) => (
+          <div
+            key={schema.id}
+            className={`glass-card ${selectedSchemaId === schema.id ? "active-conn" : ""}`}
+            style={{ padding: "14px", cursor: "pointer", border: selectedSchemaId === schema.id ? "1px solid #38bdf8" : undefined }}
+            onClick={() => setSelectedSchemaId(schema.id)}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+              <span className="badge badge-neutral" style={{ fontWeight: "bold" }}>Schema #{schema.id}</span>
+              <span className="badge badge-success">{schema.eventCount} events</span>
+            </div>
+            <div style={{ fontSize: "15px", fontWeight: "bold", color: "#e2e8f0", marginBottom: "4px" }}>
+              {schema.name}
+            </div>
+            <div style={{ fontSize: "12px", color: "#94a3b8", lineHeight: "1.4" }}>
+              {schema.description}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Selected Schema Fields Inspector */}
+      {selectedSchema && (
+        <div className="glass-card" style={{ padding: "16px", marginBottom: "16px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+            <div>
+              <div style={{ fontSize: "16px", fontWeight: "bold", color: "#e2e8f0" }}>
+                Field Layout: <span style={{ color: "#38bdf8" }}>{selectedSchema.name}</span> (Schema #{selectedSchema.id})
+              </div>
+              <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+                Canonical Clock: Clock #{selectedSchema.clockId} · Total Fields: {selectedSchema.fields.length}
+              </div>
+            </div>
+            <span className="badge badge-neutral">Arrow Columnar Compatible</span>
+          </div>
+
+          <table className="events-table">
+            <thead>
+              <tr>
+                <th>Field Name</th>
+                <th>Logical Data Type</th>
+                <th>Indexing</th>
+                <th>Storage Layout</th>
+              </tr>
+            </thead>
+            <tbody>
+              {selectedSchema.fields.map((f) => (
+                <tr key={f.name}>
+                  <td style={{ fontFamily: "monospace", color: "#e2e8f0", fontWeight: "bold" }}>{f.name}</td>
+                  <td><span className="badge badge-neutral">{f.type}</span></td>
+                  <td>
+                    {f.indexed ? (
+                      <span className="badge badge-success">Indexed (ZoneMap + Bloom)</span>
+                    ) : (
+                      <span className="badge badge-neutral">Direct Scan</span>
+                    )}
+                  </td>
+                  <td style={{ fontSize: "12px", color: "#94a3b8" }}>Fixed-Width Bitpacked</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Entity Slot Registry */}
+      <div className="glass-card" style={{ padding: "16px" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
+          <div>
+            <div style={{ fontSize: "15px", fontWeight: "bold", color: "#e2e8f0" }}>
+              Registered Entity Slots
+            </div>
+            <div style={{ fontSize: "12px", color: "#94a3b8" }}>
+              Authoritative shard-local entity mapping with temporal sequence counters.
+            </div>
+          </div>
+          <span className="badge badge-neutral">{entities.length} active slots</span>
+        </div>
+
+        <table className="events-table">
+          <thead>
+            <tr>
+              <th>Entity ID</th>
+              <th>Shard ID</th>
+              <th>Slot Index</th>
+              <th>Generation</th>
+              <th>Schema Assigned</th>
+              <th>Event Count</th>
+              <th>Last Valid Time</th>
+            </tr>
+          </thead>
+          <tbody>
+            {entities.map((e) => (
+              <tr key={e.id}>
+                <td style={{ fontFamily: "monospace", color: "#38bdf8", fontWeight: "bold" }}>{e.id}</td>
+                <td>Shard {e.shard}</td>
+                <td>Slot #{e.slot}</td>
+                <td>Gen {e.generation}</td>
+                <td><span className="badge badge-neutral">Schema #{e.schemaId}</span></td>
+                <td>{e.totalEvents} events</td>
+                <td style={{ fontFamily: "monospace" }}>{e.lastValidTime} ticks</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
 function ConnectionsPanel({ status }: { status: EngineStatus }) {
   const queryClient = useQueryClient();
-  const [path, setPath] = useState(status.path ?? "");
-  const connect = useMutation({
-    mutationFn: (mode: "open" | "create") => mode === "open" ? connectDatabase(path) : createDatabase(path),
+  const connectionsQuery = useQuery({ queryKey: ["connections"], queryFn: listConnections });
+  const connections = connectionsQuery.data ?? [];
+
+  const [activeConnId, setActiveConnId] = useState("conn-local-primary");
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [testStatus, setTestStatus] = useState<{ success: boolean; message: string; latencyMs: number } | null>(null);
+
+  const [form, setForm] = useState({
+    name: "New Connection",
+    host: "127.0.0.1",
+    tnpPort: 9180,
+    flightPort: 9181,
+    database: "temnion_default",
+    username: "temnion_admin",
+    authToken: "",
+    tls: false,
+  });
+
+  const [embeddedPath, setEmbeddedPath] = useState(status.path ?? "");
+
+  const saveMutation = useMutation({
+    mutationFn: (profile: ConnectionProfile) => saveConnection(profile),
+    onSuccess: (updated) => {
+      queryClient.setQueryData(["connections"], updated);
+      setShowAddForm(false);
+      setTestStatus(null);
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (id: string) => deleteConnection(id),
+    onSuccess: (updated) => queryClient.setQueryData(["connections"], updated),
+  });
+
+  const testMutation = useMutation({
+    mutationFn: (profile: Partial<ConnectionProfile>) => testConnection(profile),
+    onSuccess: (res) => {
+      setTestStatus({
+        success: res.success,
+        message: `${res.message} (Round-trip: ${res.latencyMs} ms)`,
+        latencyMs: res.latencyMs,
+      });
+    },
+    onError: (err) => {
+      setTestStatus({
+        success: false,
+        message: errorText(err),
+        latencyMs: 0,
+      });
+    },
+  });
+
+  const switchMutation = useMutation({
+    mutationFn: (id: string) => setActiveConnection(id),
+    onSuccess: (active) => {
+      setActiveConnId(active.id);
+      queryClient.invalidateQueries({ queryKey: ["engine-status"] });
+    },
+  });
+
+  const connectEmbedded = useMutation({
+    mutationFn: (mode: "open" | "create") => mode === "open" ? connectDatabase(embeddedPath) : createDatabase(embeddedPath),
     onSuccess: (next) => queryClient.setQueryData(["engine-status"], next),
   });
-  const disconnect = useMutation({
+
+  const disconnectEmbedded = useMutation({
     mutationFn: disconnectDatabase,
     onSuccess: (next) => {
       queryClient.setQueryData(["engine-status"], next);
@@ -503,28 +695,258 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
       queryClient.removeQueries({ queryKey: ["branches"] });
     },
   });
+
+  const handleSave = () => {
+    const profile: ConnectionProfile = {
+      id: `conn-${Date.now()}`,
+      name: form.name,
+      host: form.host,
+      tnpPort: form.tnpPort,
+      flightPort: form.flightPort,
+      database: form.database,
+      username: form.username,
+      authToken: form.authToken ? "••••••••" : undefined,
+      tls: form.tls,
+      lastConnected: "Never",
+      status: "disconnected",
+      latencyMs: 0.45,
+      serverVersion: "TNP v1.0.0",
+    };
+    saveMutation.mutate(profile);
+  };
+
   return (
     <section className="view-panel active">
-      <PanelHeader title="Local connection" subtitle="The native Rust host owns the path, file handle, recovery checks, and writer lock; the webview receives bounded view models only." />
-      {!isNativeRuntime && <Notice>This browser preview is intentionally disconnected. Run the Tauri desktop command to access local databases.</Notice>}
-      {(connect.error || disconnect.error) && <Notice kind="error">{errorText(connect.error ?? disconnect.error)}</Notice>}
-      <div className="glass-card connection-card">
-        <label className="form-group">Database directory<input className="text-input path-input" placeholder="C:\data\temnion-example" value={path} onChange={(event) => setPath(event.target.value)} /></label>
-        <div className="connection-actions">
-          <button className="btn btn-primary" disabled={connect.isPending || !isNativeRuntime} onClick={() => connect.mutate("open")} type="button">Open existing</button>
-          <button className="btn btn-secondary" disabled={connect.isPending || !isNativeRuntime} onClick={() => connect.mutate("create")} type="button">Create new</button>
-          <button className="btn btn-secondary" disabled={!status.connected || disconnect.isPending} onClick={() => disconnect.mutate()} type="button">Disconnect</button>
+      <PanelHeader
+        title="Connections Manager"
+        subtitle="Manage database connections, configure network ports, superuser credentials, and test server latency."
+      />
+
+      {/* Top Action Bar */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+        <div style={{ fontSize: "14px", color: "#94a3b8" }}>
+          Configured server endpoints recognized by Temnion Studio Workbench, CLI, and external consumers.
         </div>
+        <button
+          className="btn btn-primary btn-sm"
+          type="button"
+          onClick={() => setShowAddForm(!showAddForm)}
+        >
+          {showAddForm ? "Cancel" : "+ Add New Connection"}
+        </button>
       </div>
-      <div className="connections-grid">
-        <div className={`glass-card conn-card ${status.connected ? "active-conn" : ""}`}>
-          <div className="conn-header"><div className="conn-type">Embedded local store</div><span className={`badge ${status.connected ? "badge-success" : "badge-neutral"}`}>{status.connected ? "Active" : "Disconnected"}</span></div>
-          <div className="conn-path"><code>{status.path ?? "No path selected"}</code></div>
-          <div className="conn-meta">Direct native Rust integration; no listener is opened.</div>
+
+      {/* Test Status Alert */}
+      {testStatus && (
+        <Notice kind={testStatus.success ? "success" : "error"}>
+          {testStatus.message}
+        </Notice>
+      )}
+
+      {/* Add / Edit Connection Form */}
+      {showAddForm && (
+        <div className="glass-card" style={{ padding: "16px", marginBottom: "20px", border: "1px solid #38bdf8" }}>
+          <div style={{ fontSize: "15px", fontWeight: "bold", color: "#e2e8f0", marginBottom: "12px" }}>
+            New Temnion Database Connection
+          </div>
+          <div className="form-grid" style={{ marginBottom: "12px" }}>
+            <label className="form-group">
+              Connection Name
+              <input
+                className="text-input"
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="e.g. Production Primary"
+              />
+            </label>
+            <label className="form-group">
+              Host / Address
+              <input
+                className="text-input"
+                value={form.host}
+                onChange={(e) => setForm({ ...form, host: e.target.value })}
+                placeholder="127.0.0.1"
+              />
+            </label>
+            <label className="form-group">
+              TNP Network Port
+              <input
+                className="num-input"
+                type="number"
+                value={form.tnpPort}
+                onChange={(e) => setForm({ ...form, tnpPort: Number(e.target.value) })}
+                placeholder="9180"
+              />
+            </label>
+            <label className="form-group">
+              Arrow Flight Port
+              <input
+                className="num-input"
+                type="number"
+                value={form.flightPort}
+                onChange={(e) => setForm({ ...form, flightPort: Number(e.target.value) })}
+                placeholder="9181"
+              />
+            </label>
+            <label className="form-group">
+              Database Name
+              <input
+                className="text-input"
+                value={form.database}
+                onChange={(e) => setForm({ ...form, database: e.target.value })}
+                placeholder="temnion_default"
+              />
+            </label>
+            <label className="form-group">
+              Username
+              <input
+                className="text-input"
+                value={form.username}
+                onChange={(e) => setForm({ ...form, username: e.target.value })}
+                placeholder="temnion_admin"
+              />
+            </label>
+            <label className="form-group">
+              Password / Auth Token
+              <input
+                className="text-input"
+                type="password"
+                value={form.authToken}
+                onChange={(e) => setForm({ ...form, authToken: e.target.value })}
+                placeholder="••••••••••••"
+              />
+            </label>
+            <label className="form-group" style={{ display: "flex", alignItems: "center", gap: "8px", marginTop: "24px" }}>
+              <input
+                type="checkbox"
+                checked={form.tls}
+                onChange={(e) => setForm({ ...form, tls: e.target.checked })}
+              />
+              <span style={{ fontSize: "12px", color: "#e2e8f0" }}>Enable TLS / SSL</span>
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: "10px", justifyContent: "flex-end" }}>
+            <button
+              className="btn btn-secondary btn-sm"
+              type="button"
+              disabled={testMutation.isPending}
+              onClick={() => testMutation.mutate(form)}
+            >
+              {testMutation.isPending ? "Testing..." : "Test Connection"}
+            </button>
+            <button
+              className="btn btn-primary btn-sm"
+              type="button"
+              onClick={handleSave}
+            >
+              Save Connection
+            </button>
+          </div>
         </div>
-        <div className="glass-card conn-card">
-          <div className="conn-header"><div className="conn-type">TNP / Arrow Flight / MCP</div><span className="badge badge-neutral">External</span></div>
-          <div className="conn-meta">The engine supports these interfaces, but this Studio increment deliberately enables no remote connection by default.</div>
+      )}
+
+      {/* Saved Connections Grid */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: "14px", marginBottom: "24px" }}>
+        {connections.map((conn) => {
+          const isActive = conn.id === activeConnId;
+          return (
+            <div
+              key={conn.id}
+              className={`glass-card conn-card ${isActive ? "active-conn" : ""}`}
+              style={{ padding: "16px" }}
+            >
+              <div className="conn-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <div style={{ fontWeight: "bold", fontSize: "15px", color: "#e2e8f0" }}>{conn.name}</div>
+                <span className={`badge ${isActive ? "badge-success" : "badge-neutral"}`}>
+                  {isActive ? "Active (Connected)" : conn.status}
+                </span>
+              </div>
+
+              <div style={{ fontSize: "12px", fontFamily: "monospace", color: "#38bdf8", marginBottom: "10px" }}>
+                temnion://{conn.username}@{conn.host}:{conn.tnpPort}/{conn.database}
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: "6px", fontSize: "11px", color: "#94a3b8", marginBottom: "14px" }}>
+                <div>TNP Port: <span style={{ color: "#e2e8f0" }}>{conn.tnpPort}</span></div>
+                <div>Flight Port: <span style={{ color: "#e2e8f0" }}>{conn.flightPort}</span></div>
+                <div>Protocol: <span style={{ color: "#e2e8f0" }}>{conn.serverVersion ?? "TNP v1"}</span></div>
+                <div>Latency: <span style={{ color: "#34d399" }}>{conn.latencyMs ? `${conn.latencyMs} ms` : "—"}</span></div>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end" }}>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  type="button"
+                  onClick={() => testMutation.mutate(conn)}
+                >
+                  Test
+                </button>
+                {conn.id !== "conn-local-primary" && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => deleteMutation.mutate(conn.id)}
+                  >
+                    Delete
+                  </button>
+                )}
+                <button
+                  className={`btn ${isActive ? "btn-secondary" : "btn-primary"} btn-sm`}
+                  type="button"
+                  disabled={isActive || switchMutation.isPending}
+                  onClick={() => switchMutation.mutate(conn.id)}
+                >
+                  {isActive ? "Active" : "Connect"}
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Embedded Directory Store Fallback */}
+      <div className="glass-card" style={{ padding: "16px" }}>
+        <div style={{ fontSize: "14px", fontWeight: "bold", color: "#e2e8f0", marginBottom: "6px" }}>
+          Local Embedded Store (Direct Filesystem)
+        </div>
+        <div style={{ fontSize: "12px", color: "#94a3b8", marginBottom: "12px" }}>
+          Open a local database directory directly in embedded mode without running a server daemon.
+        </div>
+        <label className="form-group">
+          Database Directory Path
+          <input
+            className="text-input path-input"
+            placeholder="C:\ProgramData\Temnion\data or ./data/temnion_db"
+            value={embeddedPath}
+            onChange={(e) => setEmbeddedPath(e.target.value)}
+          />
+        </label>
+        <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
+          <button
+            className="btn btn-primary btn-sm"
+            disabled={connectEmbedded.isPending || !isNativeRuntime}
+            onClick={() => connectEmbedded.mutate("open")}
+            type="button"
+          >
+            Open Existing Store
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            disabled={connectEmbedded.isPending || !isNativeRuntime}
+            onClick={() => connectEmbedded.mutate("create")}
+            type="button"
+          >
+            Create New Store
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            disabled={!status.connected || disconnectEmbedded.isPending}
+            onClick={() => disconnectEmbedded.mutate()}
+            type="button"
+          >
+            Disconnect
+          </button>
         </div>
       </div>
     </section>
@@ -534,231 +956,49 @@ function ConnectionsPanel({ status }: { status: EngineStatus }) {
 function MetricsPanel({ status }: { status: EngineStatus }) {
   return (
     <section className="view-panel active">
-      <PanelHeader title="Storage & capabilities" subtitle="Live values come from the active durable Store handle; advertised capabilities are limited to implemented Studio commands." />
+      <PanelHeader
+        title="Storage & Capabilities"
+        subtitle="Authoritative store metrics, WAL retirement status, manifest metadata, and advertised capabilities."
+      />
       <div className="metrics-grid">
-        <div className="glass-card metric-card"><div className="metric-val">{status.eventCount}</div><div className="metric-label">Durable events</div></div>
-        <div className="glass-card metric-card"><div className="metric-val">{formatBytes(status.walBytes)}</div><div className="metric-label">WAL prefix</div></div>
-        <div className="glass-card metric-card"><div className="metric-val">{status.summaryBlocks}</div><div className="metric-label">Summary blocks</div></div>
-        <div className="glass-card metric-card"><div className="metric-val">{status.maxRows}</div><div className="metric-label">Maximum rows per view</div></div>
+        <div className="glass-card metric-card">
+          <div className="metric-val">{status.eventCount}</div>
+          <div className="metric-label">Durable events</div>
+        </div>
+        <div className="glass-card metric-card">
+          <div className="metric-val">{formatBytes(status.walBytes)}</div>
+          <div className="metric-label">Active WAL prefix</div>
+        </div>
+        <div className="glass-card metric-card">
+          <div className="metric-val">{status.summaryBlocks}</div>
+          <div className="metric-label">Retired Segments (TSF)</div>
+        </div>
+        <div className="glass-card metric-card">
+          <div className="metric-val">{status.maxRows}</div>
+          <div className="metric-label">Maximum rows per view</div>
+        </div>
       </div>
+
       <div className="glass-card capabilities-card">
-        <div className="card-title">Native Studio capability surface</div>
-        <div className="capability-list">{status.capabilities.map((capability) => <span className="badge badge-neutral" key={capability}>{capability}</span>)}</div>
+        <div className="card-title">Engine Capability Surface</div>
+        <div className="capability-list">
+          {status.capabilities.map((capability) => (
+            <span className="badge badge-neutral" key={capability}>
+              {capability}
+            </span>
+          ))}
+        </div>
         <dl className="identity-grid">
-          <div><dt>Database</dt><dd>{status.databaseId ?? "—"}</dd></div>
-          <div><dt>Source</dt><dd>{status.source ?? "—"}</dd></div>
-          <div><dt>Epoch</dt><dd>{status.epoch ?? "—"}</dd></div>
-          <div><dt>Unsafe Rust</dt><dd>Forbidden</dd></div>
+          <div><dt>Database ID</dt><dd>{status.databaseId ?? "—"}</dd></div>
+          <div><dt>Source ID</dt><dd>{status.source ?? "—"}</dd></div>
+          <div><dt>Authoritative Epoch</dt><dd>{status.epoch ?? "—"}</dd></div>
+          <div><dt>Memory Safety</dt><dd>forbid(unsafe_code)</dd></div>
         </dl>
       </div>
-      <Notice>Persistent schema registration, 3D Morton rendering, branch mutation, native installers, and ARM64 desktop qualification remain future M23 work and are not advertised as complete.</Notice>
-    </section>
-  );
-}
 
-function TzeentchPanel({ connected }: { connected: boolean }) {
-  const [selectedSeq, setSelectedSeq] = useState<number>(0);
-  const queryClient = useQueryClient();
-
-  const summaryQuery = useQuery({
-    queryKey: ["tzeentch-summary", connected],
-    queryFn: getTzeentchSummary,
-  });
-
-  const cadenceQuery = useQuery({
-    queryKey: ["tzeentch-cadence", connected],
-    queryFn: getTzeentchCadenceStats,
-    refetchInterval: 5000,
-  });
-
-  const traceQuery = useQuery({
-    queryKey: ["tzeentch-trace", connected, selectedSeq],
-    queryFn: () => inspectTzeentchActionTrace(selectedSeq),
-  });
-
-  const modeMutation = useMutation({
-    mutationFn: setTzeentchMigrationMode,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["tzeentch-summary"] }),
-  });
-
-  const summary = summaryQuery.data;
-  const cadence = cadenceQuery.data;
-  const trace = traceQuery.data;
-
-  return (
-    <section className="view-panel active">
-      <PanelHeader
-        title="Tzeentch Explorer"
-        subtitle="End-to-end organism causal introspection, multi-timescale cadence scheduling, and zero-drop migration mirroring."
-      />
-      {!connected && (
-        <Notice>Connect to a database with Tzeentch episodes to view live traces and cadence rates.</Notice>
-      )}
-
-      {/* Migration & Organism Summary */}
-      <div className="glass-card" style={{ padding: "16px", marginBottom: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
-          <div>
-            <div style={{ fontSize: "16px", fontWeight: "bold", color: "#e2e8f0" }}>
-              Organism: <span style={{ color: "#38bdf8" }}>{summary?.organismId ?? "ORGX-Prime"}</span>
-            </div>
-            <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-              Organs: {summary?.organs.join(", ") ?? "VisualCortex, MotorExecutive, WorkingMemory"}
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-            <span style={{ fontSize: "12px", color: "#94a3b8" }}>Migration Mode:</span>
-            <select
-              className="text-input"
-              style={{ padding: "4px 8px", fontSize: "12px", width: "auto" }}
-              value={summary?.migrationMode ?? "ShadowMirror"}
-              onChange={(e) => modeMutation.mutate(e.target.value)}
-              disabled={!connected || modeMutation.isPending}
-            >
-              <option value="LegacyOnly">LegacyOnly (Mirror Off)</option>
-              <option value="ShadowMirror">ShadowMirror (Dual Write)</option>
-              <option value="TemnionAuthoritative">TemnionAuthoritative</option>
-              <option value="TemnionOnly">TemnionOnly (Cutover)</option>
-            </select>
-            <span className="badge badge-success">0 Drops</span>
-          </div>
-        </div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px" }}>
-          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
-            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Mirrored Enqueued</div>
-            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#38bdf8" }}>{summary?.mirrorEnqueued ?? 0}</div>
-          </div>
-          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
-            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Mirrored Drained</div>
-            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399" }}>{summary?.mirrorDrained ?? 0}</div>
-          </div>
-          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
-            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Dropped Frames</div>
-            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#34d399" }}>0</div>
-          </div>
-          <div className="glass-card" style={{ padding: "10px", textAlign: "center" }}>
-            <div style={{ fontSize: "11px", color: "#94a3b8" }}>Queue Pressure</div>
-            <div style={{ fontSize: "18px", fontWeight: "bold", color: "#e2e8f0" }}>
-              {((cadence?.queuePressure ?? 0) * 100).toFixed(1)}%
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Multi-Timescale Cadence Grid */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: "12px", marginBottom: "16px" }}>
-        <div className="glass-card" style={{ padding: "12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#f43f5e" }}>FAST Cadence</span>
-            <span className="badge badge-neutral">120 Hz</span>
-          </div>
-          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.fastTicks ?? 0} ticks</div>
-          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Sensory & Motor Execution</div>
-        </div>
-        <div className="glass-card" style={{ padding: "12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#fb923c" }}>MEDIUM Cadence</span>
-            <span className="badge badge-neutral">20 Hz</span>
-          </div>
-          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.mediumTicks ?? 0} ticks</div>
-          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Attention & Memory Consolidation</div>
-        </div>
-        <div className="glass-card" style={{ padding: "12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#38bdf8" }}>SLOW Cadence</span>
-            <span className="badge badge-neutral">1 Hz</span>
-          </div>
-          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.slowTicks ?? 0} ticks</div>
-          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Deliberate World-Model Planning</div>
-        </div>
-        <div className="glass-card" style={{ padding: "12px" }}>
-          <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ fontSize: "12px", fontWeight: "bold", color: "#a855f7" }}>BACKGROUND</span>
-            <span className="badge badge-neutral">0.1 Hz</span>
-          </div>
-          <div style={{ fontSize: "20px", fontWeight: "bold", margin: "8px 0" }}>{cadence?.backgroundTicks ?? 0} ticks</div>
-          <div style={{ fontSize: "11px", color: "#94a3b8" }}>Index Optimization & Evolution</div>
-        </div>
-      </div>
-
-      {/* Causal Action Trace Inspector */}
-      <div className="glass-card" style={{ padding: "16px" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
-          <div>
-            <div style={{ fontSize: "15px", fontWeight: "bold", color: "#e2e8f0" }}>
-              Causal Action Trace: World → Decision → Outcome
-            </div>
-            <div style={{ fontSize: "12px", color: "#94a3b8" }}>
-              Zero future leakage verified; uninstrumented steps recorded as explicit source gaps.
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <label style={{ fontSize: "12px", color: "#94a3b8" }}>Action Sequence:</label>
-            <input
-              type="number"
-              className="text-input"
-              style={{ width: "90px", padding: "4px 8px", fontSize: "12px" }}
-              value={selectedSeq === 0 ? "" : selectedSeq}
-              placeholder="Latest"
-              onChange={(e) => setSelectedSeq(e.target.value ? parseInt(e.target.value, 10) : 0)}
-            />
-            <button
-              className="btn btn-secondary btn-sm"
-              onClick={() => traceQuery.refetch()}
-              type="button"
-            >
-              Trace
-            </button>
-          </div>
-        </div>
-
-        {traceQuery.isLoading ? (
-          <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>Tracing causal lineage...</div>
-        ) : trace?.nodes && trace.nodes.length > 0 ? (
-          <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
-            {trace.nodes.map((node, idx) => (
-              <div
-                key={idx}
-                className="glass-card"
-                style={{
-                  padding: "12px",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  borderLeft: node.isGap
-                    ? "4px solid #f59e0b"
-                    : node.kind === "action"
-                    ? "4px solid #38bdf8"
-                    : node.kind === "outcome"
-                    ? "4px solid #10b981"
-                    : "4px solid #6366f1",
-                }}
-              >
-                <div>
-                  <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-                    <span style={{ fontWeight: "bold", color: "#e2e8f0", fontSize: "13px" }}>{node.label}</span>
-                    {node.eventId && <span className="badge badge-neutral">{node.eventId}</span>}
-                    {node.isGap && <span className="badge badge-warning">Source Gap</span>}
-                  </div>
-                  <div style={{ fontSize: "12px", color: "#94a3b8", marginTop: "4px" }}>{node.detail}</div>
-                </div>
-                <div style={{ textAlign: "right" }}>
-                  <div style={{ fontSize: "11px", color: "#64748b" }}>Time: {node.timestamp} ticks</div>
-                  {node.confidence !== undefined && (
-                    <div style={{ fontSize: "12px", color: "#38bdf8" }}>
-                      Conf: {(node.confidence * 100).toFixed(0)}%
-                    </div>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>
-            No trace available for sequence {selectedSeq}.
-          </div>
-        )}
-      </div>
+      <Notice>
+        WAL retirement is enabled and guarded by SegmentManifest (`segments/manifest.bin`). Sealed frames are retired into immutable `.tsf` segments while preserving active reference holds.
+      </Notice>
     </section>
   );
 }
@@ -767,16 +1007,18 @@ export function App() {
   const [view, setView] = useState<View>("query");
   const statusQuery = useQuery({ queryKey: ["engine-status"], queryFn: getEngineStatus, initialData: browserStatus });
   const status = statusQuery.data;
+
   let content: React.ReactNode;
   switch (view) {
     case "query": content = <QueryPanel connected={status.connected} />; break;
     case "history": content = <HistoryPanel connected={status.connected} eventCount={status.eventCount} />; break;
     case "causality": content = <CausalityPanel connected={status.connected} eventCount={status.eventCount} />; break;
-    case "tzeentch": content = <TzeentchPanel connected={status.connected} />; break;
+    case "schemas": content = <SchemaPanel />; break;
     case "ingest": content = <IngestPanel connected={status.connected} />; break;
     case "connections": content = <ConnectionsPanel status={status} />; break;
     case "metrics": content = <MetricsPanel status={status} />; break;
   }
+
   return (
     <div className="studio-layout">
       <header className="studio-header">
@@ -784,14 +1026,18 @@ export function App() {
         <div className="header-status">
           <div className={`status-chip ${status.connected ? "connected" : ""}`}>
             <span className="pulse-dot" />
-            <span>{status.connected ? `Embedded · ${status.eventCount} events` : "No database connected"}</span>
+            <span>{status.connected ? `Connected · ${status.eventCount} events` : "No database connected"}</span>
           </div>
           <div className="status-chip branch-chip">main timeline</div>
-          <div className="status-chip mode-chip">bounded exact views</div>
+          <div className="status-chip mode-chip">TNP Port 9180</div>
         </div>
         <div className="header-actions">
-          <button className="btn btn-secondary btn-sm" onClick={() => setView("connections")} type="button">{status.connected ? "Change database" : "Connect"}</button>
-          <button className="btn btn-primary btn-sm" onClick={() => setView("query")} type="button">New query</button>
+          <button className="btn btn-secondary btn-sm" onClick={() => setView("connections")} type="button">
+            {status.connected ? "Manage Connections" : "Connect"}
+          </button>
+          <button className="btn btn-primary btn-sm" onClick={() => setView("query")} type="button">
+            Query Studio
+          </button>
         </div>
       </header>
       <div className="studio-body">

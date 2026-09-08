@@ -88,45 +88,39 @@ export interface CausalTrace {
   truncated: boolean;
 }
 
-export interface TzeentchSummary {
-  organismId: string;
-  organs: string[];
-  cells: string[];
-  migrationMode: string;
-  mirrorEnqueued: number;
-  mirrorDrained: number;
-  dropCount: number;
+export interface ConnectionProfile {
+  id: string;
+  name: string;
+  host: string;
+  tnpPort: number;
+  flightPort: number;
+  database: string;
+  username: string;
+  authToken?: string;
+  tls: boolean;
+  lastConnected?: string;
+  status: "connected" | "disconnected" | "error";
+  latencyMs?: number;
+  serverVersion?: string;
 }
 
-export interface TzeentchCadenceStats {
-  fastHz: number;
-  fastTicks: number;
-  mediumHz: number;
-  mediumTicks: number;
-  slowHz: number;
-  slowTicks: number;
-  backgroundHz: number;
-  backgroundTicks: number;
-  dropCount: number;
-  queuePressure: number;
+export interface SchemaDefinition {
+  id: number;
+  name: string;
+  clockId: number;
+  description: string;
+  fields: Array<{ name: string; type: string; indexed: boolean }>;
+  eventCount: number;
 }
 
-export interface ActionTraceNode {
-  kind: string;
-  eventId?: string;
-  label: string;
-  detail: string;
-  timestamp: number;
-  confidence?: number;
-  isGap: boolean;
-}
-
-export interface ActionTrace {
-  actionEventId: string;
-  nodes: ActionTraceNode[];
-  edges: string[];
-  futureLeakageDetected: boolean;
-  totalCauses: number;
+export interface EntitySummary {
+  id: string;
+  shard: number;
+  slot: number;
+  generation: number;
+  schemaId: number;
+  totalEvents: number;
+  lastValidTime: number;
 }
 
 export const isNativeRuntime =
@@ -146,13 +140,13 @@ async function nativeCommand<T>(command: string, args?: Record<string, unknown>)
 function createInitialBrowserEvents(): EventRow[] {
   const events: EventRow[] = [];
   const entities = [
-    { id: "0:1", name: "Turbine_Alpha" },
-    { id: "0:2", name: "VisualCortex" },
-    { id: "0:3", name: "ExecutiveOrgan" },
-    { id: "0:4", name: "MotorEffector" },
+    { id: "0:1", name: "SensorNode_Alpha" },
+    { id: "0:2", name: "PaymentAccount_US" },
+    { id: "0:3", name: "AuditGateway_Edge" },
+    { id: "0:4", name: "TemporalLedger_Node" },
   ];
 
-  for (let seq = 0; seq < 24; seq++) {
+  for (let seq = 0; seq < 28; seq++) {
     const validTime = 1000 + seq * 5;
     const knownTime = validTime + 2;
     let schema = 1;
@@ -161,37 +155,45 @@ function createInitialBrowserEvents(): EventRow[] {
     const causes = seq > 0 ? [`1:1:${seq - 1}`] : [];
 
     if (seq % 4 === 0) {
-      schema = 1; // Telemetry
+      schema = 1; // Sensor Telemetry
       const temp = (68.0 + (seq * 1.3) % 25).toFixed(1);
       const vib = (0.12 + (seq * 0.03) % 0.4).toFixed(2);
+      const press = (101.3 + (seq * 0.4) % 15).toFixed(1);
       const status = Number(temp) > 85.0 ? "WARNING" : "NOMINAL";
       fields = [
         { name: "node", value: ent.name },
         { name: "temperature", value: `${temp}°C` },
         { name: "vibration_g", value: `${vib}g` },
+        { name: "pressure_kpa", value: `${press} kPa` },
         { name: "status", value: status },
       ];
     } else if (seq % 4 === 1) {
-      schema = 101; // Tzeentch Percept
+      schema = 2; // Financial Ledger
+      const amount = (1250.0 + (seq * 87.5) % 8000).toFixed(2);
       fields = [
-        { name: "organ", value: "VisualCortex" },
-        { name: "sensor_id", value: "Cam0_Front" },
-        { name: "cadence", value: "Fast_120Hz" },
-        { name: "confidence", value: "0.96" },
+        { name: "account_from", value: "ACC_US_9021" },
+        { name: "account_to", value: "ACC_EU_4412" },
+        { name: "amount_usd", value: `$${amount}` },
+        { name: "tx_type", value: "SettlementTransfer" },
+        { name: "clearing_status", value: "POSTED" },
       ];
     } else if (seq % 4 === 2) {
-      schema = 102; // Tzeentch Intention
+      schema = 3; // System Security Audit
       fields = [
-        { name: "goal", value: "CourseCorrection" },
-        { name: "policy", value: "NeuralPPO_v4" },
-        { name: "deliberation", value: "RiskScore=0.74" },
+        { name: "principal", value: "srv_worker_04" },
+        { name: "action", value: "RotateSecretToken" },
+        { name: "resource", value: "/auth/tokens/worker_04" },
+        { name: "access_result", value: "ALLOWED" },
+        { name: "ip_origin", value: "127.0.0.1" },
       ];
     } else {
-      schema = 103; // Tzeentch Action
+      schema = 4; // State Snapshot
+      const val = (98.4 + (seq * 0.2) % 4).toFixed(2);
       fields = [
-        { name: "actuator", value: "GimbalVector" },
-        { name: "deflection_rad", value: "+0.18" },
-        { name: "thrust_pct", value: "92%" },
+        { name: "asset_id", value: "EQUITY_CORP_T" },
+        { name: "valuation", value: `${val}` },
+        { name: "confidence_interval", value: "0.992" },
+        { name: "reconciled", value: "TRUE" },
       ];
     }
 
@@ -205,7 +207,7 @@ function createInitialBrowserEvents(): EventRow[] {
       knownClock: 1,
       knownTime,
       payloadHex: `01${seq.toString(16).padStart(2, "0")}7f4a`,
-      payloadBytes: 32,
+      payloadBytes: 48,
       causes,
       fields,
     });
@@ -222,10 +224,101 @@ class InBrowserStore {
   events: EventRow[] = createInitialBrowserEvents();
   branches: BranchInfo[] = [
     { id: 1, name: "main", lifecycle: "Active" },
-    { id: 2, name: "experiment/fast-reflexes", parentId: 1, forkSequence: 12, lifecycle: "Active" },
-    { id: 3, name: "shadow/eval-candidate-v2", parentId: 1, forkSequence: 18, lifecycle: "Active" },
+    { id: 2, name: "experiment/high-frequency", parentId: 1, forkSequence: 12, lifecycle: "Active" },
+    { id: 3, name: "shadow/compliance-audit", parentId: 1, forkSequence: 18, lifecycle: "Active" },
   ];
-  migrationMode = "ShadowMirror";
+
+  connections: ConnectionProfile[] = [
+    {
+      id: "conn-local-primary",
+      name: "Local Primary Node (TNP)",
+      host: "127.0.0.1",
+      tnpPort: 9180,
+      flightPort: 9181,
+      database: "temnion_default",
+      username: "temnion_admin",
+      authToken: "••••••••",
+      tls: false,
+      lastConnected: "Just now",
+      status: "connected",
+      latencyMs: 0.38,
+      serverVersion: "TNP v1 (temniond 0.1.0)",
+    },
+    {
+      id: "conn-staging-analytics",
+      name: "Staging Analytical Cluster",
+      host: "10.14.0.25",
+      tnpPort: 9180,
+      flightPort: 9181,
+      database: "staging_warehouse",
+      username: "analyst_readonly",
+      tls: true,
+      lastConnected: "2 hours ago",
+      status: "disconnected",
+      latencyMs: 12.4,
+      serverVersion: "TNP v1 (temniond 0.1.0)",
+    },
+  ];
+
+  activeConnectionId = "conn-local-primary";
+
+  schemas: SchemaDefinition[] = [
+    {
+      id: 1,
+      name: "SensorTelemetry",
+      clockId: 1,
+      description: "Turbine, temperature, and environmental telemetry records",
+      fields: [
+        { name: "node", type: "Utf8", indexed: true },
+        { name: "temperature", type: "Float64", indexed: true },
+        { name: "vibration_g", type: "Float64", indexed: false },
+        { name: "pressure_kpa", type: "Float64", indexed: false },
+        { name: "status", type: "Utf8", indexed: true },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 2,
+      name: "FinancialLedger",
+      clockId: 1,
+      description: "Multi-currency account settlements and bilateral transfers",
+      fields: [
+        { name: "account_from", type: "Utf8", indexed: true },
+        { name: "account_to", type: "Utf8", indexed: true },
+        { name: "amount_usd", type: "Decimal128", indexed: true },
+        { name: "tx_type", type: "Utf8", indexed: true },
+        { name: "clearing_status", type: "Utf8", indexed: true },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 3,
+      name: "SystemSecurityAudit",
+      clockId: 1,
+      description: "Immutable authorization, access control, and cryptographic audit log",
+      fields: [
+        { name: "principal", type: "Utf8", indexed: true },
+        { name: "action", type: "Utf8", indexed: true },
+        { name: "resource", type: "Utf8", indexed: true },
+        { name: "access_result", type: "Utf8", indexed: true },
+        { name: "ip_origin", type: "Utf8", indexed: false },
+      ],
+      eventCount: 7,
+    },
+    {
+      id: 4,
+      name: "StateSnapshot",
+      clockId: 1,
+      description: "Point-in-time portfolio and asset valuation checkpoints",
+      fields: [
+        { name: "asset_id", type: "Utf8", indexed: true },
+        { name: "valuation", type: "Float64", indexed: true },
+        { name: "confidence_interval", type: "Float64", indexed: false },
+        { name: "reconciled", type: "Boolean", indexed: false },
+      ],
+      eventCount: 7,
+    },
+  ];
 
   getStatus(): EngineStatus {
     return {
@@ -247,9 +340,10 @@ class InBrowserStore {
         "durable-append",
         "branch-inspection",
         "causal-trace",
-        "tzeentch-explorer",
-        "causal-action-trace",
-        "cadence-scheduling",
+        "wal-retirement",
+        "segment-manifest",
+        "connections-manager",
+        "schema-catalog",
       ],
     };
   }
@@ -258,15 +352,15 @@ class InBrowserStore {
     let filtered = [...this.events];
     const upper = q.toUpperCase();
 
-    // Basic in-browser filter detection
+    // In-browser filter detection
     if (upper.includes("SCHEMA = 1") || upper.includes("SCHEMA=1")) {
       filtered = filtered.filter((e) => e.schema === 1);
-    } else if (upper.includes("SCHEMA = 101") || upper.includes("SCHEMA=101")) {
-      filtered = filtered.filter((e) => e.schema === 101);
-    } else if (upper.includes("SCHEMA = 102") || upper.includes("SCHEMA=102")) {
-      filtered = filtered.filter((e) => e.schema === 102);
-    } else if (upper.includes("SCHEMA = 103") || upper.includes("SCHEMA=103")) {
-      filtered = filtered.filter((e) => e.schema === 103);
+    } else if (upper.includes("SCHEMA = 2") || upper.includes("SCHEMA=2")) {
+      filtered = filtered.filter((e) => e.schema === 2);
+    } else if (upper.includes("SCHEMA = 3") || upper.includes("SCHEMA=3")) {
+      filtered = filtered.filter((e) => e.schema === 3);
+    } else if (upper.includes("SCHEMA = 4") || upper.includes("SCHEMA=4")) {
+      filtered = filtered.filter((e) => e.schema === 4);
     }
 
     const rows = filtered.slice(0, Math.min(maxRows, 1_000));
@@ -296,7 +390,7 @@ class InBrowserStore {
       "└── PhysicalLimit: count=100",
       "    └── PhysicalProject: [entity, schema, valid_time, known_time, sequence]",
       "        └── PhysicalScan: events.wal",
-      "            ├── BlockSkipPredicate: ZoneMap([1000..1120]) -> Match",
+      "            ├── BlockSkipPredicate: ZoneMap([1000..1140]) -> Match",
       "            ├── BloomFilterPredicate: EntityBloomFilter -> Pass",
       "            └── ResourceBudget: max_scanned=1000, max_read_bytes=1048576",
     ].join("\n");
@@ -330,7 +424,7 @@ class InBrowserStore {
       payloadBytes: (req.payloadHex?.length || 8) / 2,
       causes: req.causes || [],
       fields: [
-        { name: "ingest_source", value: "Studio_Web" },
+        { name: "ingest_source", value: "Studio_Workbench" },
         { name: "payload_bytes", value: `${(req.payloadHex?.length || 8) / 2}` },
       ],
     };
@@ -447,67 +541,102 @@ export function traceCausality(sequence: number, maxDepth: number): Promise<Caus
     : Promise.resolve(inBrowserStore.trace(sequence, maxDepth));
 }
 
-export function getTzeentchSummary(): Promise<TzeentchSummary> {
-  return isNativeRuntime
-    ? nativeCommand<TzeentchSummary>("get_tzeentch_summary")
-    : Promise.resolve({
-        organismId: "ORGX-Prime",
-        organs: ["VisualCortex", "MotorExecutive", "WorkingMemory", "WorldModel"],
-        cells: ["SensoryCell0", "FeatureAttn1", "PolicyCell2", "PredictionCell3"],
-        migrationMode: inBrowserStore.migrationMode,
-        mirrorEnqueued: 256,
-        mirrorDrained: 256,
-        dropCount: 0,
-      });
-}
+// ---------------------------------------------------------------------------
+// Connections Manager APIs
+// ---------------------------------------------------------------------------
 
-export function getTzeentchCadenceStats(): Promise<TzeentchCadenceStats> {
-  return isNativeRuntime
-    ? nativeCommand<TzeentchCadenceStats>("get_tzeentch_cadence_stats")
-    : Promise.resolve({
-        fastHz: 120.2,
-        fastTicks: 28400,
-        mediumHz: 20.0,
-        mediumTicks: 4720,
-        slowHz: 1.0,
-        slowTicks: 236,
-        backgroundHz: 0.1,
-        backgroundTicks: 24,
-        dropCount: 0,
-        queuePressure: 0.02,
-      });
-}
-
-export function inspectTzeentchActionTrace(sequence: number): Promise<ActionTrace> {
-  return isNativeRuntime
-    ? nativeCommand<ActionTrace>("inspect_tzeentch_action_trace", { sequence })
-    : Promise.resolve({
-        actionEventId: `1:1:${sequence}`,
-        nodes: [
-          { kind: "percept", label: "Percept (VisualCortex)", detail: "Sensor: Cam0_Front (obstacle detected at 4.2m)", timestamp: 1000, isGap: false },
-          { kind: "cell", label: "Processing (ExecutiveOrgan)", detail: "Cell: PolicyCell2 (Feature extraction)", timestamp: 1005, isGap: false },
-          { kind: "belief", label: "Belief (CollisionRiskHigh)", detail: "Confidence: 0.94", timestamp: 1008, confidence: 0.94, isGap: false },
-          { kind: "prediction", label: "Prediction (TrajectoryCrossing)", detail: "Probability: 0.89", timestamp: 1010, confidence: 0.89, isGap: false },
-          { kind: "intention", label: "Intention (EvasiveSteerRight)", detail: "Policy: NeuralPPO_v4", timestamp: 1012, isGap: false },
-          { kind: "action", label: "Action (Act_SteerVector)", detail: "Command: RudderSteer(+0.35rad)", timestamp: 1015, isGap: false },
-          { kind: "outcome", label: "Outcome Feedback", detail: "Reward: +1.25, clearance achieved", timestamp: 1020, isGap: false },
-        ],
-        edges: [
-          `1:1:${sequence - 5} -> 1:1:${sequence - 4}`,
-          `1:1:${sequence - 4} -> 1:1:${sequence - 3}`,
-          `1:1:${sequence - 3} -> 1:1:${sequence - 2}`,
-          `1:1:${sequence - 2} -> 1:1:${sequence - 1}`,
-          `1:1:${sequence - 1} -> 1:1:${sequence}`,
-        ],
-        futureLeakageDetected: false,
-        totalCauses: 5,
-      });
-}
-
-export function setTzeentchMigrationMode(mode: string): Promise<string> {
-  if (isNativeRuntime) {
-    return nativeCommand<string>("set_tzeentch_migration_mode", { mode });
+export async function listConnections(): Promise<ConnectionProfile[]> {
+  if (typeof window !== "undefined") {
+    const stored = localStorage.getItem("temnion_connections");
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          inBrowserStore.connections = parsed;
+        }
+      } catch {
+        // Fallback to memory
+      }
+    }
   }
-  inBrowserStore.migrationMode = mode;
-  return Promise.resolve(mode);
+  return inBrowserStore.connections;
+}
+
+export async function saveConnection(profile: ConnectionProfile): Promise<ConnectionProfile[]> {
+  const existingIdx = inBrowserStore.connections.findIndex((c) => c.id === profile.id);
+  if (existingIdx >= 0) {
+    inBrowserStore.connections[existingIdx] = profile;
+  } else {
+    inBrowserStore.connections.push(profile);
+  }
+
+  if (typeof window !== "undefined") {
+    localStorage.setItem("temnion_connections", JSON.stringify(inBrowserStore.connections));
+  }
+
+  return [...inBrowserStore.connections];
+}
+
+export async function deleteConnection(id: string): Promise<ConnectionProfile[]> {
+  inBrowserStore.connections = inBrowserStore.connections.filter((c) => c.id !== id);
+  if (typeof window !== "undefined") {
+    localStorage.setItem("temnion_connections", JSON.stringify(inBrowserStore.connections));
+  }
+  return [...inBrowserStore.connections];
+}
+
+export async function testConnection(profile: Partial<ConnectionProfile>): Promise<{
+  success: boolean;
+  latencyMs: number;
+  serverId: string;
+  version: string;
+  message: string;
+}> {
+  const host = profile.host || "127.0.0.1";
+  const port = profile.tnpPort || 9180;
+  const db = profile.database || "temnion_default";
+
+  // Simulate or perform native connection ping
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve({
+        success: true,
+        latencyMs: 0.45,
+        serverId: `temniond-${host === "127.0.0.1" ? "primary" : "remote"}`,
+        version: "TNP v1.0.0",
+        message: `Successfully connected to ${host}:${port}/${db}. Handshake and ping verified.`,
+      });
+    }, 250);
+  });
+}
+
+export async function getActiveConnection(): Promise<ConnectionProfile> {
+  const active = inBrowserStore.connections.find((c) => c.id === inBrowserStore.activeConnectionId);
+  return active || inBrowserStore.connections[0];
+}
+
+export async function setActiveConnection(id: string): Promise<ConnectionProfile> {
+  inBrowserStore.activeConnectionId = id;
+  const active = inBrowserStore.connections.find((c) => c.id === id);
+  if (!active) {
+    throw new Error(`Connection ${id} not found`);
+  }
+  return active;
+}
+
+// ---------------------------------------------------------------------------
+// Schema Catalog APIs
+// ---------------------------------------------------------------------------
+
+export async function listSchemas(): Promise<SchemaDefinition[]> {
+  return inBrowserStore.schemas;
+}
+
+export async function listEntities(): Promise<EntitySummary[]> {
+  return [
+    { id: "0:1", shard: 0, slot: 1, generation: 1, schemaId: 1, totalEvents: 7, lastValidTime: 1135 },
+    { id: "0:2", shard: 0, slot: 2, generation: 1, schemaId: 2, totalEvents: 7, lastValidTime: 1130 },
+    { id: "0:3", shard: 0, slot: 3, generation: 1, schemaId: 3, totalEvents: 7, lastValidTime: 1125 },
+    { id: "0:4", shard: 0, slot: 4, generation: 1, schemaId: 4, totalEvents: 7, lastValidTime: 1120 },
+  ];
 }

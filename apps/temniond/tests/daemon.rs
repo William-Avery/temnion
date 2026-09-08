@@ -193,3 +193,38 @@ fn daemon_tcp_lifecycle_and_query_execution() {
     server.shutdown();
     assert!(!server.is_running());
 }
+
+#[test]
+fn connector_handshake_and_ping_against_daemon() {
+    use temnion_adapter::connector::{ActiveConnection, ConnectionConfig};
+
+    let env = TestEnv::new("connector-ping");
+    let config = DaemonConfig {
+        data_dir: env.dir.clone(),
+        server_id: "daemon-connector-target".to_string(),
+        tnp_bind: format!("127.0.0.1:{}", env.port),
+        ..DaemonConfig::default()
+    };
+
+    let mut server = DaemonServer::new(config).expect("DaemonServer::new failed");
+    server.start().expect("Failed to start daemon server");
+
+    // Connect via Connector
+    let client_cfg = ConnectionConfig {
+        host: "127.0.0.1".to_string(),
+        port: env.port,
+        database: "temnion_default".to_string(),
+        username: "admin".to_string(),
+        auth_token: None,
+    };
+
+    let mut conn = ActiveConnection::connect(client_cfg).expect("Connector failed to connect");
+    assert_eq!(conn.server_id(), "daemon-connector-target");
+    assert_eq!(conn.negotiated_version(), TNP_VERSION);
+
+    // Ping
+    let latency = conn.ping().expect("Ping failed");
+    assert!(latency.as_millis() < 1000);
+
+    server.shutdown();
+}
