@@ -87,6 +87,56 @@ CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
 **All core roadmap milestones completed:** core engine, storage tiers, EKS, transformations, evolution, decoupled Tzeentch integration & connector, standalone daemon (`temniond`), manifest-based WAL retirement, Studio Workbench IDE, and PostgreSQL-style component installer.
 
+## System Architecture & Detailed Feature Tour
+
+### 1. Live State Engine & Dense Slab Allocation (`temnion-state`)
+![Temnion Live State Infographic](docs/assets/temnion_live_state_infographic.png)
+*Dense packed state slabs (`StateSlab<T>`), generational slot reuse, bounded memory footprint, and atomic single-writer updates without runtime garbage collection.*
+
+---
+
+### 2. Immutable Event History & Multi-Clock Chronicle (`temnion-events`, `temnion-format`, `temnion-causal`)
+![Temnion Chronicle & Event History](docs/assets/temnion_chronicle_neon_event_history.png)
+*Multi-clock coordinate plane reconciling Physical Nanosecond Monotonic Time, Logical Lamport Sequence Commit Ordering, and Cryptographic Parent-Vector Causal DAGs with zero-copy timeline branching.*
+
+---
+
+### 3. Temporal Query Engine & E-Graph Canonical IR (`temnion-query`, `temnion-transform`)
+![Temnion Temporal Query Engine Dashboard](docs/assets/temnion_query_futuristic_data_dashboard.png)
+*Unified query evaluation supporting standard SQL (`AS OF SYSTEM_TIME`, `BETWEEN PHYSICAL`), native TemQL, and AI-compact `tn:` pipelines lowering into typed IR optimized via equality saturation e-graphs.*
+
+---
+
+### 4. Epistemic Knowledge Store (EKS) & Agent Memory (`temnion-eks`)
+![Temnion Agent Memory Dashboard](docs/assets/temnion_agent_memory_dashboard.png)
+*Durable cognitive primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`), non-destructive cascading retraction, `WHY` provenance traversal, and Brier score predictive calibration across active, reference, and archive tiers.*
+
+---
+
+### 5. Unified Multi-Protocol Interfaces (`temnion-protocol`, `temnion-flight`, `temnion-mcp`)
+![Temnion Interfaces & Unified Intelligence](docs/assets/temnion_interfaces_unified_temporal_intelligence.png)
+*High-performance binary Temnion Network Protocol (TNP: 9180), Arrow Flight SQL analytical bulk transport (9181), Model Context Protocol (MCP) JSON-RPC 2.0 control plane, and panic-safe C ABI bindings.*
+
+---
+
+### 6. Temnion Studio Workbench IDE (`apps/temnion-studio`)
+![Temnion Studio Neon Temporal Data Dashboard](docs/assets/temnion_studio_neon_temporal_data_dashboard.png)
+*Modern database administration IDE (MySQL Workbench & pgAdmin equivalent) featuring Query Studio, Schema & Entity Catalog, interactive multi-clock timeline scrubber, branch DAG visualizer, and Connections Manager.*
+
+---
+
+### 7. Isolated Measured Evolution & Safety Constitution (`temnion-evolution`)
+![Temnion Evolution Dashboard Infographic](docs/assets/temnion_evolution_dashboard_infographic.png)
+*Self-improving runtime with Champion/Challenger evaluation, adaptive physical memory scoring, and an immutable 8-axiom Constitution verified at runtime under `#![forbid(unsafe_code)]`.*
+
+---
+
+### 8. Operational Daemon, Durability & Production Defaults (`apps/temniond`, `temnion-storage`)
+![Temnion Operational Defaults Dashboard](docs/assets/temnion_operational_defaults_dashboard.png)
+*Always-on background server daemon (`temniond`), automated Windows Service and Linux systemd units, SegmentManifest (`manifest.bin`), ReferenceHold-protected WAL retirement compaction, and CRC32 point-in-time backups.*
+
+---
+
 ## Quick start
 
 Install [Rust through rustup](https://rustup.rs/) and the platform's native linker.
