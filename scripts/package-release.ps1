@@ -89,10 +89,22 @@ New-Item -ItemType Directory -Path "$stageDir\bin" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\config" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\services\systemd" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\services\windows" -Force | Out-Null
+New-Item -ItemType Directory -Path "$stageDir\studio-web" -Force | Out-Null
 
 # Copy binaries
 Copy-Item $temBin "$stageDir\bin\"
 Copy-Item $temniondBin "$stageDir\bin\"
+
+# Copy Studio Desktop binary if built
+$studioExe = "$repoRoot\apps\temnion-studio\src-tauri\target\release\temnion-studio$exeSuffix"
+if (Test-Path $studioExe) {
+    Copy-Item $studioExe "$stageDir\bin\"
+}
+
+# Copy Studio Web assets
+if (Test-Path "$repoRoot\apps\temnion-studio\dist") {
+    Copy-Item -Recurse -Force "$repoRoot\apps\temnion-studio\dist\*" "$stageDir\studio-web\"
+}
 
 # Copy configs and services
 Copy-Item "$repoRoot\temnion.example.toml" "$stageDir\config\"

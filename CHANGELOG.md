@@ -2,6 +2,13 @@
 
 ## Unreleased - Standalone daemon and operational lifecycle (Post-R6)
 
+- Added Manifest-Based WAL Retirement (`crates/temnion-storage`):
+  - **Segment Manifest (`manifest.bin`):** Atomic CRC32-verified binary manifest tracking published immutable `.tsf` segments, sequence ranges, byte lengths, and retired sequence progress.
+  - **Durable WAL Compaction (`Store::retire_wal`):** In-place safe WAL truncation and compaction retiring published segment frames while strictly respecting active `ReferenceHold` protection.
+  - **Seamless Historical Queries:** Queries (`Store::get`, `Store::history`) seamlessly traverse across retired immutable segments and active WAL frames with identical result sets and budget bounds.
+- Temnion Studio Interactive Web Workbench (`apps/temnion-studio`):
+  - **In-Browser Interactive Engine:** Added comprehensive in-browser fallback engine in `api.ts` providing instant zero-setup data exploration, SQL/TemQL/Compact Tem query evaluation, execution plan generation (EXPLAIN), temporal timeline visualization, branch DAG browsing, and Tzeentch multi-cadence monitoring without requiring native compilation.
+  - **Release Packaging Integration:** Updated `scripts/package-release.ps1` to bundle Studio web assets and native desktop binaries into release archives.
 - Added Standalone Daemon Application (`apps/temniond`):
   - **Multi-Protocol Daemon Binary (`temniond`):** Always-on background database service hosting high-performance binary TNP wire protocol over TCP sockets (`127.0.0.1:9180`), Arrow Flight analytical service (`127.0.0.1:9181`), and Model Context Protocol (MCP) control-plane endpoints.
   - **Thread-Safe Architecture:** Pure safe Rust concurrency model under `#![forbid(unsafe_code)]` with `Arc<Mutex<TnpServer>>`, worker connection threads, atomic shutdown coordination, and background maintenance worker for periodic checkpointing.

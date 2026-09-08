@@ -185,11 +185,13 @@ Exit: mandatory interfaces have real examples/tests/docs, losing research
 candidates are explicitly classified, and supported platform/release statements
 are backed by execution evidence.
 
-## Post-R6 — Operational extensions and standalone daemon
+## Post-R6 — Operational extensions, WAL retirement, and Studio Workbench
 
 | Task | Status | Deliverable and acceptance |
 | --- | --- | --- |
 | Operational Daemon (`temniond`) | Implemented (`apps/temniond`, `services/`, `scripts/`) | Standalone background service binary (`temniond`) hosting TNP TCP sockets, Arrow Flight, and MCP with line-by-line TOML configuration (`DaemonConfig`, `temnion.example.toml`), Linux `systemd` service unit with strict sandboxing (`services/systemd/temniond.service`), Windows Service management scripts (`services/windows/install-service.ps1`, `uninstall-service.ps1`), distribution packaging script (`scripts/package-release.ps1`), and [ADR 0015](adr/0015-standalone-daemon-and-operational-lifecycle.md). |
+| Manifest-Based WAL Retirement | Implemented (`crates/temnion-storage`) | Atomic CRC32-verified segment manifest (`manifest.bin`), safe in-place WAL compaction (`Store::retire_wal`), strict respect of active reference holds (`ReferenceHold`), and seamless transparent historical querying across retired segments and active WAL. |
+| Studio Interactive Workbench | Implemented (`apps/temnion-studio`) | Desktop Tauri and browser-accessible Web Workbench providing SQL/TemQL/Compact Tem query runner, EXPLAIN execution plan tree inspection, temporal dual-clock timeline visualization, branch DAG browsing, and Tzeentch multi-cadence monitors. |
 
 ## Gates
 
