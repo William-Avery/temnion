@@ -1,5 +1,27 @@
 # Changelog
 
+## Unreleased - Decoupled Tzeentch Client, Database Connector, and Component Installer
+
+- **Decoupled Tzeentch Side-Program (`crates/temnion-adapter`):**
+  - Completely separated Tzeentch from the database core and IDE. Tzeentch now runs as an autonomous consumer client (`tzeentch`) over the network wire protocol.
+  - Implemented subcommands: `status` (connection verification and daemon capabilities), `ping` (round-trip latency testing), `cadence` (multi-timescale scheduling loop), and `trace` (causal action lineage reconstruction).
+- **Standardized Database Network Connector (`crates/temnion-adapter/src/connector.rs`):**
+  - Added connection profile resolution (`ConnectionConfig`, `ActiveConnection`) supporting `temnion://[user[:password]@]host[:port]/database` URIs, CLI overrides, environment variables (`TEMNION_HOST`, `TEMNION_PORT`, `TEMNION_DATABASE`, `TEMNION_USER`, `TEMNION_AUTH_TOKEN`), and shared profile files (`~/.temnion/connections.toml`).
+  - Added TNP binary handshake and protocol negotiation with server identity and round-trip latency probing.
+- **Temnion Studio Database IDE Transformation (`apps/temnion-studio`):**
+  - Removed domain-specific Tzeentch Explorer panels to maintain a pure, generic database IDE (akin to MySQL Workbench and pgAdmin).
+  - Added **Connections Manager**: allows configuring connection profiles (Host, TNP Port `9180`, Flight Port `9181`, Database Name, Username, Auth Token/Password, TLS), testing connections with latency and server capability badges, and switching active instances.
+  - Added **Schema & Entity Catalog**: inspects registered schemas (IDs, field layouts, data types, indexing policies, storage layouts) and registered entity slots with temporal sequence counters.
+- **PostgreSQL-Style Component Installer (`installer/`):**
+  - Added `installer/install.ps1` (PowerShell) and `installer/install.sh` (Bash) providing an interactive setup wizard:
+    - Checkbox-style component selection: `[1] tem`, `[2] temniond`, `[3] temnion-studio`, `[4] tzeentch`, `[5] Windows Service`.
+    - Custom port configuration (default `9180`, flight port `9181`), listen address, and database name.
+    - Superuser credential configuration with secure input and automated random token fallback.
+    - Automated directory provisioning, `temnion.toml` generation, and client profile (`~/.temnion/connections.toml`) registration.
+    - Supports silent unattended deployments via `-Silent` / `--silent` parameters.
+- **Release Packaging Integration (`scripts/package-release.ps1`):**
+  - Bundles the `tzeentch` client binary and the `installer/` directory directly into distribution packages.
+
 ## Unreleased - Standalone daemon and operational lifecycle (Post-R6)
 
 - Added Manifest-Based WAL Retirement (`crates/temnion-storage`):

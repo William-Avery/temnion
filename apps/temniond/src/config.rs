@@ -10,6 +10,12 @@ use std::path::{Path, PathBuf};
 /// Configuration for the `temniond` standalone background daemon.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DaemonConfig {
+    /// Logical database name served by default.
+    pub database_name: String,
+    /// Superuser administrator username.
+    pub admin_user: String,
+    /// Administrative authentication token or password.
+    pub auth_token: Option<String>,
     /// Path to the authoritative database directory.
     pub data_dir: PathBuf,
     /// Server identifier reported during handshake.
@@ -31,6 +37,9 @@ pub struct DaemonConfig {
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
+            database_name: "temnion_default".to_string(),
+            admin_user: "temnion_admin".to_string(),
+            auth_token: None,
             data_dir: PathBuf::from("./data/temnion_db"),
             server_id: "temniond-primary".to_string(),
             tnp_bind: "127.0.0.1:9180".to_string(),
@@ -83,6 +92,15 @@ impl DaemonConfig {
                 let key = key.trim();
                 let val = val.trim().trim_matches('"').trim_matches('\'');
                 match key {
+                    "database_name" => config.database_name = val.to_string(),
+                    "admin_user" => config.admin_user = val.to_string(),
+                    "auth_token" => {
+                        config.auth_token = if val.is_empty() {
+                            None
+                        } else {
+                            Some(val.to_string())
+                        };
+                    }
                     "data_dir" => config.data_dir = PathBuf::from(val),
                     "server_id" => config.server_id = val.to_string(),
                     "tnp_bind" => config.tnp_bind = val.to_string(),
@@ -137,8 +155,13 @@ impl DaemonConfig {
 
     /// Serializes configuration into a human-readable TOML string.
     pub fn to_toml_string(&self) -> String {
+        let auth_val = self.auth_token.as_deref().unwrap_or("");
         format!(
             "# Temnion Standalone Daemon Configuration (temnion.toml)\n\n\
+            [database]\n\
+            database_name = \"{}\"\n\
+            admin_user = \"{}\"\n\
+            auth_token = \"{}\"\n\n\
             [storage]\n\
             data_dir = \"{}\"\n\
             source_id = {}\n\
@@ -150,6 +173,9 @@ impl DaemonConfig {
             mcp_enabled = {}\n\n\
             [maintenance]\n\
             maintenance_interval_secs = {}\n",
+            self.database_name,
+            self.admin_user,
+            auth_val,
             self.data_dir.display(),
             self.source_id,
             self.source_epoch,

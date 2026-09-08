@@ -1,6 +1,16 @@
 # Temnion Standalone Daemon Configuration Template
 # Place this file at temnion.toml or pass via --config <path>
 
+[database]
+# Logical database name served by default.
+database_name = "temnion_default"
+
+# Superuser administrative account name.
+admin_user = "temnion_admin"
+
+# Administrative authentication token or password (leave blank for local trust mode).
+auth_token = ""
+
 [storage]
 # Authoritative database directory containing the append-only log, index, and branch catalog.
 data_dir = "./data/temnion_db"

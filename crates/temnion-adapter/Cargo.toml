@@ -16,7 +16,12 @@ temnion-storage.workspace = true
 temnion-causal.workspace = true
 temnion-eks.workspace = true
 temnion-query.workspace = true
+temnion-protocol.workspace = true
 crc32fast.workspace = true
+
+[[bin]]
+name = "tzeentch"
+path = "src/bin/tzeentch.rs"
 
 [lints]
 workspace = true

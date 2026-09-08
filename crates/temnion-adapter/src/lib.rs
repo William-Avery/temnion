@@ -27,6 +27,12 @@ use temnion_core::{ClockId, EntityId, EventId, EventTimes, SchemaId, Timestamp};
 use temnion_format::StoredEvent;
 use temnion_storage::{Store, WriteEvent};
 
+pub mod connector;
+pub use connector::{
+    ActiveConnection, ConnectionConfig, ConnectorError, DEFAULT_ADMIN_USER, DEFAULT_DATABASE_NAME,
+    DEFAULT_FLIGHT_PORT, DEFAULT_TNP_PORT,
+};
+
 // ---------------------------------------------------------------------------
 // Standard Schemas & Clocks
 // ---------------------------------------------------------------------------

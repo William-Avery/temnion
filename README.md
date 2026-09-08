@@ -71,10 +71,10 @@ Tzeentch is an integrated first consumer, fully decoupled from the deterministic
 | `temnion-eks` | Epistemic Knowledge Store (EKS) with versioned primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance with non-destructive cascading retraction, `WHY` provenance traversal, predictive ledger with Brier score calibration, and tiered consolidation (`Active`, `Reference`, `Archive`) |
 | `temnion-transform` | Deterministic transformation engine with versioned manifests, typed signatures, CPU/memory resource metering, immutable lineage logs, and canonical query IR e-graph optimizer with equality saturation, constant folding, and cycle-safe plan extraction |
 | `temnion-evolution` | Isolated measured evolution engine (`EvolutionEngine`, `ChampionChallengerRegistry`), adaptive physical memory and lifecycle evaluators, semantic/vector projection index (`SemanticProjectionIndex`), gated meta-evolution (`MutationPolicy`), and runtime immutable Constitution hardening (`Constitution`, 8 axioms, `ConstitutionAudit`) |
-| `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), and causal action tracer (`TzeentchActionTracer`) with explicit `SourceGap` nodes and zero future leakage |
-| `temniond` | Standalone background service daemon hosting TNP (`:9180`), Arrow Flight (`:9181`), and MCP endpoints with TOML configuration (`DaemonConfig`), periodic maintenance thread, Linux systemd unit, and Windows Service automation scripts |
+| `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), causal action tracer (`TzeentchActionTracer`), standardized database network connector (`ConnectionConfig`, `ActiveConnection`), and standalone `tzeentch` client binary |
+| `temniond` | Standalone background service daemon hosting TNP (`:9180`), Arrow Flight (`:9181`), and MCP endpoints with TOML configuration (`DaemonConfig`), database superuser credentials, periodic maintenance thread, Linux systemd unit, and Windows Service automation scripts |
 | `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, `rewrite-demo`, `evolve`, `tzeentch`, and `benchmark scale` commands |
-| `temnion-studio` | Tauri 2 + React/TypeScript desktop client and interactive Web Workbench using TanStack Query/Table for local open/create, query, EXPLAIN, history, append, branch inspection, causal-trace flows, and dedicated Tzeentch Explorer with live cadence monitors, migration mode toggle, and causal action trace graph |
+| `temnion-studio` | Tauri 2 + React/TypeScript desktop client and interactive Web Workbench (MySQL Workbench / pgAdmin style) featuring Query Studio, Temporal Plane, Branches & Causality, Ingestion Console, Schema & Entity Catalog, Connections Manager, and Storage & Capabilities |
 | `temnion-bench` | In-memory baselines, durable on-disk batch workloads, multi-cadence scale harness (4K, 64K, 1M+ active records), and retention lifecycle stress harness |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
@@ -83,7 +83,7 @@ Startup scans the authoritative WAL.
 Exports retain or retire that WAL into sealed immutable segments with manifest verification. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**All core roadmap milestones completed:** core engine, storage tiers, EKS, transformations, evolution, Tzeentch integration, standalone daemon (`temniond`), manifest-based WAL retirement, and Studio Workbench.
+**All core roadmap milestones completed:** core engine, storage tiers, EKS, transformations, evolution, decoupled Tzeentch integration & connector, standalone daemon (`temniond`), manifest-based WAL retirement, Studio Workbench IDE, and PostgreSQL-style component installer.
 
 ## Quick start
 

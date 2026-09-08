@@ -50,8 +50,8 @@ Write-Host "Packaging Temnion v$Version for $Target..." -ForegroundColor Cyan
 
 # 1. Build release binaries
 if (-not $SkipBuild) {
-    Write-Host "Building release binaries (tem, temniond)..." -ForegroundColor Yellow
-    $buildArgs = @("build", "--release", "--bin", "tem", "--bin", "temniond", "--locked")
+    Write-Host "Building release binaries (tem, temniond, tzeentch)..." -ForegroundColor Yellow
+    $buildArgs = @("build", "--release", "--bin", "tem", "--bin", "temniond", "--bin", "tzeentch", "--locked")
     if ($Target) {
         $buildArgs += @("--target", $Target)
     }
@@ -68,6 +68,7 @@ $exeSuffix = if ($Target -like "*windows*") { ".exe" } else { "" }
 
 $temBin = "$targetDir\tem$exeSuffix"
 $temniondBin = "$targetDir\temniond$exeSuffix"
+$tzeentchBin = "$targetDir\tzeentch$exeSuffix"
 
 if (-not (Test-Path $temBin)) {
     Write-Error "Missing binary: $temBin"
@@ -75,6 +76,10 @@ if (-not (Test-Path $temBin)) {
 }
 if (-not (Test-Path $temniondBin)) {
     Write-Error "Missing binary: $temniondBin"
+    exit 1
+}
+if (-not (Test-Path $tzeentchBin)) {
+    Write-Error "Missing binary: $tzeentchBin"
     exit 1
 }
 
@@ -87,6 +92,7 @@ if (Test-Path $stageDir) {
 
 New-Item -ItemType Directory -Path "$stageDir\bin" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\config" -Force | Out-Null
+New-Item -ItemType Directory -Path "$stageDir\installer" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\services\systemd" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\services\windows" -Force | Out-Null
 New-Item -ItemType Directory -Path "$stageDir\studio-web" -Force | Out-Null
@@ -94,6 +100,7 @@ New-Item -ItemType Directory -Path "$stageDir\studio-web" -Force | Out-Null
 # Copy binaries
 Copy-Item $temBin "$stageDir\bin\"
 Copy-Item $temniondBin "$stageDir\bin\"
+Copy-Item $tzeentchBin "$stageDir\bin\"
 
 # Copy Studio Desktop binary if built
 $studioExe = "$repoRoot\apps\temnion-studio\src-tauri\target\release\temnion-studio$exeSuffix"
@@ -104,6 +111,11 @@ if (Test-Path $studioExe) {
 # Copy Studio Web assets
 if (Test-Path "$repoRoot\apps\temnion-studio\dist") {
     Copy-Item -Recurse -Force "$repoRoot\apps\temnion-studio\dist\*" "$stageDir\studio-web\"
+}
+
+# Copy installer scripts
+if (Test-Path "$repoRoot\installer") {
+    Copy-Item -Recurse -Force "$repoRoot\installer\*" "$stageDir\installer\"
 }
 
 # Copy configs and services

@@ -54,6 +54,7 @@ dependencies = [
  "temnion-eks",
  "temnion-events",
  "temnion-format",
+ "temnion-protocol",
  "temnion-query",
  "temnion-storage",
 ]
