@@ -57,7 +57,7 @@ Tzeentch is an integrated first consumer, fully decoupled from the deterministic
 | `temnion-events` | Per-source bounded `EventLog<T>`, typed payloads, atomic batch admission, entity/time/known-as-of filters and bounded snapshot pagination |
 | `temnion-schema` | Validated scalar schemas, exact typed values, sparse mutations, atomic in-memory apply and bounded canonical binary encoding |
 | `temnion-format` | Versioned, bounded, checksummed WAL headers/batches and independently readable raw TSF v1 segments |
-| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, predicate pushdown block skipping, companion TSM export, retention policies, causal reference holds, and CRC32 point-in-time backup/restore |
+| `temnion-storage` | OS writer locks, synchronized batches, restart-stable identity/sequence, explicit tail recovery, predicate pushdown block skipping, companion TSM export, retention policies, causal reference holds, CRC32 point-in-time backup/restore, and manifest-based WAL retirement |
 | `temnion-codec` | Strictly lossless codecs (Raw, RLE, BitPack, Delta-FOR, XOR) with CRC32C framing, dynamic scoring and raw fallback |
 | `temnion-index` | Hierarchical summaries (TNSM), zone maps, Bloom filters, Morton 2D/3D SFC layouts, and zero-duplication alternate projections (TNPR) |
 | `temnion-replay` | Deterministic reconstruction, periodic atomic checkpoints (TNCP), SplitMix64 step-counted PRNG tracking and bit-for-bit replay equivalence |
@@ -74,16 +74,16 @@ Tzeentch is an integrated first consumer, fully decoupled from the deterministic
 | `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), and causal action tracer (`TzeentchActionTracer`) with explicit `SourceGap` nodes and zero future leakage |
 | `temniond` | Standalone background service daemon hosting TNP (`:9180`), Arrow Flight (`:9181`), and MCP endpoints with TOML configuration (`DaemonConfig`), periodic maintenance thread, Linux systemd unit, and Windows Service automation scripts |
 | `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, `rewrite-demo`, `evolve`, `tzeentch`, and `benchmark scale` commands |
-| `temnion-studio` | Tauri 2 + React/TypeScript desktop client using TanStack Query/Table for local open/create, query, EXPLAIN, history, append, branch inspection, causal-trace flows, and dedicated Tzeentch Explorer with live cadence monitors, migration mode toggle, and causal action trace graph |
+| `temnion-studio` | Tauri 2 + React/TypeScript desktop client and interactive Web Workbench using TanStack Query/Table for local open/create, query, EXPLAIN, history, append, branch inspection, causal-trace flows, and dedicated Tzeentch Explorer with live cadence monitors, migration mode toggle, and causal action trace graph |
 | `temnion-bench` | In-memory baselines, durable on-disk batch workloads, multi-cadence scale harness (4K, 64K, 1M+ active records), and retention lifecycle stress harness |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
 with zone maps and Bloom filters, zero-duplication alternate projections, and bounded frame decoding.
 Startup scans the authoritative WAL.
-Exports currently retain that WAL. Typed schemas are library APIs; the low-level
+Exports retain or retire that WAL into sealed immutable segments with manifest verification. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**Still unfinished:** manifest-based WAL retirement and native platform installer packages (deb/rpm/msi).
+**All core roadmap milestones completed:** core engine, storage tiers, EKS, transformations, evolution, Tzeentch integration, standalone daemon (`temniond`), manifest-based WAL retirement, and Studio Workbench.
 
 ## Quick start
 

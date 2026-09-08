@@ -23,9 +23,20 @@ use temnion_format::{
 use temnion_index::{BlockSummary, IndexError, SegmentSummary, SkipDecision};
 
 pub mod lifecycle;
+pub mod manifest;
 pub use lifecycle::{
     BackupFileEntry, BackupManager, BackupManifest, ReferenceHold, RetentionPolicy,
 };
+pub use manifest::{SealedSegmentMeta, SegmentManifest};
+
+/// Summary of a WAL retirement operation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RetirementReport {
+    pub frames_retired: usize,
+    pub events_retired: u64,
+    pub bytes_freed: u64,
+    pub retired_up_to: Option<u64>,
+}
 
 #[derive(Debug)]
 pub enum StorageError {
@@ -357,6 +368,11 @@ impl Store {
         wal.read_exact(&mut bytes)
             .map_err(io_error("read WAL header"))?;
         let header = decode_wal_header(&bytes)?;
+        let manifest_path = root.join("segments").join("manifest.bin");
+        let initial_sequence = SegmentManifest::load_if_exists(&manifest_path)?
+            .and_then(|m| m.retired_up_to_sequence)
+            .map(|s| s + 1)
+            .unwrap_or(0);
         let mut store = Self {
             root,
             wal,
@@ -364,7 +380,7 @@ impl Store {
             limits,
             frames: Vec::new(),
             summaries: Vec::new(),
-            next_sequence: 0,
+            next_sequence: initial_sequence,
             end_offset: WAL_HEADER_LEN as u64,
             last_known: None,
             poisoned: false,
@@ -699,13 +715,34 @@ impl Store {
         {
             return Err(StorageError::UnknownEvent(id));
         }
-        let frame = self
-            .frame_for_sequence(id.sequence)
-            .ok_or(StorageError::UnknownEvent(id))?;
-        self.read_indexed_frame(frame)?
-            .into_iter()
-            .find(|event| event.id == id)
-            .ok_or(StorageError::UnknownEvent(id))
+        if let Some(frame) = self.frame_for_sequence(id.sequence) {
+            self.read_indexed_frame(frame)?
+                .into_iter()
+                .find(|event| event.id == id)
+                .ok_or(StorageError::UnknownEvent(id))
+        } else {
+            self.read_event_from_segment(id.sequence)?
+                .filter(|event| event.id == id)
+                .ok_or(StorageError::UnknownEvent(id))
+        }
+    }
+
+    fn read_event_from_segment(&self, sequence: u64) -> Result<Option<StoredEvent>, StorageError> {
+        let manifest_path = self.root.join("segments").join("manifest.bin");
+        if let Some(manifest) = SegmentManifest::load_if_exists(&manifest_path)? {
+            if let Some(meta) = manifest.find_segment_for_sequence(sequence) {
+                let seg_path = self.root.join("segments").join(&meta.filename);
+                if seg_path.try_exists().map_err(io_error("inspect segment"))? {
+                    let bytes = read_bounded_file(&seg_path, self.limits.max_segment_bytes)?;
+                    let segment = decode_segment(&bytes, &self.limits)?;
+                    return Ok(segment
+                        .records
+                        .into_iter()
+                        .find(|e| e.id.sequence == sequence));
+                }
+            }
+        }
+        Ok(None)
     }
 
     pub fn history(
@@ -749,36 +786,48 @@ impl Store {
             continuation: None,
         };
         while next < end {
-            let frame_idx = self
-                .frame_index_for_sequence(next)
-                .ok_or(StorageError::InvalidCursor)?;
-            let frame = self.frames[frame_idx];
+            let (records, frame_length, frame_count) =
+                if let Some(frame_idx) = self.frame_index_for_sequence(next) {
+                    let frame = self.frames[frame_idx];
 
-            // Summary-guided predicate pushdown: skip entire frame if zero matches guaranteed
-            if let Some(summary) = self.summaries.get(frame_idx) {
-                if summary.matches_filter(&filter) == SkipDecision::Skip {
-                    next = frame.first + frame.count as u64;
-                    continue;
-                }
-            }
+                    // Summary-guided predicate pushdown: skip entire frame if zero matches guaranteed
+                    if let Some(summary) = self.summaries.get(frame_idx) {
+                        if summary.matches_filter(&filter) == SkipDecision::Skip {
+                            next = frame.first + frame.count as u64;
+                            continue;
+                        }
+                    }
+                    (self.read_indexed_frame(frame)?, frame.length, frame.count)
+                } else {
+                    let manifest_path = self.root.join("segments").join("manifest.bin");
+                    let manifest = SegmentManifest::load_if_exists(&manifest_path)?
+                        .ok_or(StorageError::InvalidCursor)?;
+                    let meta = manifest
+                        .find_segment_for_sequence(next)
+                        .ok_or(StorageError::InvalidCursor)?;
+                    let seg_path = self.root.join("segments").join(&meta.filename);
+                    let bytes = read_bounded_file(&seg_path, self.limits.max_segment_bytes)?;
+                    let segment = decode_segment(&bytes, &self.limits)?;
+                    let count = segment.records.len();
+                    (segment.records, meta.byte_length as usize, count)
+                };
 
-            if frame.length > budget.max_read_bytes || frame.count > budget.max_scanned {
+            if frame_length > budget.max_read_bytes || frame_count > budget.max_scanned {
                 if page.bytes_read != 0 {
                     break;
                 }
                 return Err(StorageError::BudgetTooSmall {
-                    frame_bytes: frame.length,
-                    frame_records: frame.count,
+                    frame_bytes: frame_length,
+                    frame_records: frame_count,
                 });
             }
-            if frame.length > budget.max_read_bytes - page.bytes_read
-                || frame.count > budget.max_scanned - page.scanned
+            if frame_length > budget.max_read_bytes - page.bytes_read
+                || frame_count > budget.max_scanned - page.scanned
             {
                 break;
             }
-            let records = self.read_indexed_frame(frame)?;
             page.scanned += records.len();
-            page.bytes_read += frame.length;
+            page.bytes_read += frame_length;
             for record in records {
                 if record.id.sequence < next {
                     continue;
@@ -825,7 +874,7 @@ impl Store {
         Ok(page)
     }
 
-    /// Exports one independently readable TSF per WAL batch. The WAL is retained.
+    /// Exports one independently readable TSF per WAL batch and registers it in the SegmentManifest.
     pub fn seal(&mut self) -> Result<SealReport, StorageError> {
         if self.poisoned {
             return Err(StorageError::Poisoned);
@@ -834,13 +883,20 @@ impl Store {
         fs::create_dir_all(&directory).map_err(io_error("create segment directory"))?;
         #[cfg(unix)]
         sync_directory(&self.root)?;
+
+        let manifest_path = directory.join("manifest.bin");
+        let mut manifest = SegmentManifest::load_if_exists(&manifest_path)?.unwrap_or_else(|| {
+            SegmentManifest::new(self.header.database, self.header.source, self.header.epoch)
+        });
+
         let mut report = SealReport::default();
         for index in 0..self.frames.len() {
             let frame = self.frames[index];
             let records = self.read_indexed_frame(frame)?;
             let encoded = encode_segment(self.header, &records, &self.limits)?;
             let last = frame.first + frame.count as u64 - 1;
-            let destination = directory.join(format!("{:020}-{:020}.tsf", frame.first, last));
+            let filename = format!("{:020}-{:020}.tsf", frame.first, last);
+            let destination = directory.join(&filename);
             if destination
                 .try_exists()
                 .map_err(io_error("inspect segment path"))?
@@ -886,6 +942,18 @@ impl Store {
                 sync_directory(&directory)?;
                 report.segments_created += 1;
             }
+
+            let crc32 = crc32fast::hash(&encoded);
+            let meta = SealedSegmentMeta {
+                first_sequence: frame.first,
+                last_sequence: last,
+                filename,
+                byte_length: encoded.len() as u64,
+                crc32,
+                sealed_at_ticks: records.last().map(|r| r.times.valid.ticks).unwrap_or(0),
+            };
+            manifest.register_segment(meta);
+
             let destination_tsm = directory.join(format!("{:020}-{:020}.tsm", frame.first, last));
             if !destination_tsm
                 .try_exists()
@@ -904,7 +972,115 @@ impl Store {
             }
             report.events += records.len() as u64;
         }
+
+        manifest.save(&manifest_path)?;
         Ok(report)
+    }
+
+    /// Retires and compacts sealed WAL frames whose sequences are covered by active immutable segments
+    /// and not protected by any active reference hold.
+    pub fn retire_wal(
+        &mut self,
+        holds: &[ReferenceHold],
+    ) -> Result<RetirementReport, StorageError> {
+        if self.poisoned {
+            return Err(StorageError::Poisoned);
+        }
+        let manifest_path = self.root.join("segments").join("manifest.bin");
+        let mut manifest = match SegmentManifest::load_if_exists(&manifest_path)? {
+            Some(m) => m,
+            None => {
+                return Ok(RetirementReport::default());
+            }
+        };
+
+        let mut eligible_count = 0;
+        for frame in &self.frames {
+            let first = frame.first;
+            let last = frame.first + frame.count as u64 - 1;
+            let is_sealed = manifest.is_sequence_sealed(first) && manifest.is_sequence_sealed(last);
+            let is_held = holds
+                .iter()
+                .any(|h| (first..=last).any(|s| h.is_sequence_held(s)));
+            if is_sealed && !is_held {
+                eligible_count += 1;
+            } else {
+                break;
+            }
+        }
+
+        if eligible_count == 0 {
+            return Ok(RetirementReport {
+                frames_retired: 0,
+                events_retired: 0,
+                bytes_freed: 0,
+                retired_up_to: manifest.retired_up_to_sequence,
+            });
+        }
+
+        let retired_frames = &self.frames[..eligible_count];
+        let highest_retired =
+            retired_frames.last().unwrap().first + retired_frames.last().unwrap().count as u64 - 1;
+        let events_retired: u64 = retired_frames.iter().map(|f| f.count as u64).sum();
+
+        // Read remaining frames from current WAL
+        let remaining_frames = self.frames[eligible_count..].to_vec();
+        let mut remaining_bytes = Vec::new();
+        for rf in &remaining_frames {
+            self.wal
+                .seek(SeekFrom::Start(rf.offset))
+                .map_err(io_error("seek remaining WAL frame"))?;
+            let mut frame_buf = vec![0u8; rf.length];
+            self.wal
+                .read_exact(&mut frame_buf)
+                .map_err(io_error("read remaining WAL frame"))?;
+            remaining_bytes.extend_from_slice(&frame_buf);
+        }
+
+        let wal_header = encode_wal_header(self.header);
+        let bytes_freed = self
+            .end_offset
+            .saturating_sub((wal_header.len() + remaining_bytes.len()) as u64);
+
+        // In-place compaction: write remaining bytes directly after header and truncate
+        self.wal
+            .seek(SeekFrom::Start(wal_header.len() as u64))
+            .map_err(io_error("seek WAL for compaction"))?;
+        if !remaining_bytes.is_empty() {
+            self.wal
+                .write_all(&remaining_bytes)
+                .map_err(io_error("write compacted WAL bytes"))?;
+        }
+        let new_len = (wal_header.len() + remaining_bytes.len()) as u64;
+        self.wal
+            .set_len(new_len)
+            .map_err(io_error("truncate compacted WAL"))?;
+        self.wal
+            .sync_all()
+            .map_err(io_error("sync compacted WAL"))?;
+
+        // Update in-memory state
+        let mut current_offset = wal_header.len() as u64;
+        let mut new_frames = Vec::with_capacity(remaining_frames.len());
+        for mut rf in remaining_frames {
+            rf.offset = current_offset;
+            current_offset += rf.length as u64;
+            new_frames.push(rf);
+        }
+        self.frames = new_frames;
+        self.summaries.drain(..eligible_count);
+        self.end_offset = new_len;
+
+        // Update and persist manifest
+        manifest.retired_up_to_sequence = Some(highest_retired);
+        manifest.save(&manifest_path)?;
+
+        Ok(RetirementReport {
+            frames_retired: eligible_count,
+            events_retired,
+            bytes_freed,
+            retired_up_to: Some(highest_retired),
+        })
     }
 }
 
