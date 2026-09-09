@@ -515,24 +515,14 @@ body {
   gap: 6px;
 }
 
-.num-input, .text-input {
-  background: rgba(11, 15, 23, 0.8);
-  border: 1px solid var(--border-glass);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
+.budget-label .num-input {
+  width: 75px;
+  min-height: 28px;
+  height: 28px;
+  padding: 2px 8px;
   font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  outline: none;
 }
 
-.num-input {
-  width: 80px;
-}
-
-.text-input {
-  width: 100%;
-}
 
 .exec-actions {
   display: flex;
@@ -850,7 +840,7 @@ canvas {
   margin-top: 2px;
 }
 
-/* Forms */
+/* Forms & Input Controls */
 .form-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -862,11 +852,152 @@ canvas {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  font-size: 12.5px;
+  color: #cbd5e1;
+  font-weight: 500;
 }
 
-.form-group label {
-  font-size: 12px;
-  color: var(--text-secondary);
+.form-label,
+.form-group > label {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: #cbd5e1;
+  letter-spacing: 0.01em;
+  display: block;
+}
+
+.form-hint {
+  font-size: 11.5px;
+  color: #94a3b8;
+  line-height: 1.4;
+  margin-top: 2px;
+}
+
+/* Universal Base Input, Select & Textarea Controls */
+.form-input,
+.text-input,
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="search"],
+input[type="email"],
+select {
+  display: block;
+  width: 100%;
+  min-height: 38px;
+  height: 38px;
+  padding: 8px 12px;
+  background-color: #0b0f17;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: var(--radius-sm);
+  color: #f8fafc;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 1.4;
+  box-sizing: border-box;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+/* Number inputs use mono */
+.num-input,
+input[type="number"] {
+  font-family: var(--font-mono);
+}
+
+.num-input {
+  width: 100%;
+}
+
+/* Focus State with glowing accent */
+.form-input:focus,
+.text-input:focus,
+input[type="text"]:focus,
+input[type="number"]:focus,
+input[type="password"]:focus,
+input[type="search"]:focus,
+input[type="email"]:focus,
+select:focus,
+textarea.form-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  background-color: #0f172a;
+}
+
+/* Placeholder */
+.form-input::placeholder,
+.text-input::placeholder,
+input::placeholder,
+textarea::placeholder {
+  color: #64748b;
+  opacity: 1;
+}
+
+/* Dropdown Select Elements */
+select,
+select.form-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  cursor: pointer;
+  padding-right: 36px;
+  background-color: #0b0f17;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 12px center;
+  background-size: 14px 14px;
+}
+
+select:hover,
+select.form-input:hover {
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+select option,
+select.form-input option {
+  background-color: #0f172a;
+  color: #f8fafc;
+  padding: 8px 12px;
+}
+
+/* Textarea controls */
+textarea.form-input,
+textarea.text-input {
+  min-height: 80px;
+  height: auto;
+  resize: vertical;
+  padding: 10px 12px;
+  font-family: var(--font-mono);
+  line-height: 1.5;
+}
+
+/* Radio & Checkbox Controls */
+input[type="radio"],
+input[type="checkbox"] {
+  accent-color: #6366f1;
+  width: 16px;
+  height: 16px;
+  min-height: 16px;
+  cursor: pointer;
+  vertical-align: middle;
+  flex-shrink: 0;
+}
+
+/* Field Table Inputs in Modal */
+.fields-editor-table input.form-input,
+.fields-editor-table select.form-input {
+  min-height: 32px !important;
+  height: 32px !important;
+  padding: 4px 8px !important;
+  font-size: 12px !important;
+}
+
+/* Inline form number inputs */
+.inline-form .num-input {
+  width: 90px;
+  min-height: 36px;
+  height: 36px;
 }
 
 .form-actions {
