@@ -10,6 +10,20 @@ use std::fmt;
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+/// Signature for commit subscriber callbacks.
+pub type CommitCallback = dyn Fn(&[StoredEvent]) + Send + Sync;
+
+/// Callback handle invoked when durable WAL frames are committed.
+#[derive(Clone)]
+pub struct CommitSubscriber(pub Arc<CommitCallback>);
+
+impl fmt::Debug for CommitSubscriber {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "CommitSubscriber(..)")
+    }
+}
 
 use temnion_core::{
     ClockId, DatabaseId, EntityId, EventId, EventTimes, SchemaId, SourceEpoch, SourceId, Timestamp,
@@ -289,6 +303,7 @@ pub struct Store {
     end_offset: u64,
     last_known: Option<Timestamp>,
     poisoned: bool,
+    commit_subscribers: Vec<CommitSubscriber>,
     #[cfg(test)]
     fail_before_sync: bool,
     _lock: File,
@@ -344,6 +359,7 @@ impl Store {
             end_offset: encoded.len() as u64,
             last_known: None,
             poisoned: false,
+            commit_subscribers: Vec::new(),
             #[cfg(test)]
             fail_before_sync: false,
             _lock: lock,
@@ -384,6 +400,7 @@ impl Store {
             end_offset: WAL_HEADER_LEN as u64,
             last_known: None,
             poisoned: false,
+            commit_subscribers: Vec::new(),
             #[cfg(test)]
             fail_before_sync: false,
             _lock: lock,
@@ -505,6 +522,15 @@ impl Store {
 
     pub fn wal_bytes(&self) -> u64 {
         self.end_offset
+    }
+
+    /// Registers a commit subscriber callback to be notified whenever a batch of events is durably written to the WAL.
+    pub fn add_commit_subscriber(
+        &mut self,
+        subscriber: impl Fn(&[StoredEvent]) + Send + Sync + 'static,
+    ) {
+        self.commit_subscribers
+            .push(CommitSubscriber(Arc::new(subscriber)));
     }
 
     /// Starts a bounded scan at a source sequence in the current durable prefix.
@@ -640,6 +666,9 @@ impl Store {
         self.next_sequence = end;
         self.end_offset = new_offset;
         self.last_known = known;
+        for subscriber in &self.commit_subscribers {
+            (subscriber.0)(&records);
+        }
         Ok(receipt)
     }
 

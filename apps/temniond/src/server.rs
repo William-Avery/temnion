@@ -40,7 +40,7 @@ impl Error for ServerError {}
 pub struct DaemonServer {
     config: DaemonConfig,
     running: Arc<AtomicBool>,
-    tnp_server: Arc<Mutex<TnpServer>>,
+    tnp_server: Arc<TnpServer>,
     tnp_handle: Option<JoinHandle<()>>,
     maintenance_handle: Option<JoinHandle<()>>,
 }
@@ -50,7 +50,7 @@ impl DaemonServer {
     pub fn new(config: DaemonConfig) -> Result<Self, ServerError> {
         let store =
             Self::open_or_init_store(&config.data_dir, config.source_id, config.source_epoch)?;
-        let tnp_server = Arc::new(Mutex::new(TnpServer::new(store, config.server_id.clone())));
+        let tnp_server = Arc::new(TnpServer::new(store, config.server_id.clone()));
 
         Ok(Self {
             config,
@@ -148,7 +148,7 @@ impl DaemonServer {
                 }
 
                 // Perform maintenance checkpoint / health sync
-                if let Ok(_server_guard) = server_maint.lock() {
+                if let Ok(_store_guard) = server_maint.store().lock() {
                     // Healthy lock acquisition verifies store stability
                 }
             }
@@ -158,9 +158,9 @@ impl DaemonServer {
         Ok(())
     }
 
-    fn handle_client(stream: TcpStream, server: Arc<Mutex<TnpServer>>) -> Result<(), TnpError> {
+    fn handle_client(stream: TcpStream, server: Arc<TnpServer>) -> Result<(), TnpError> {
         stream
-            .set_read_timeout(Some(Duration::from_secs(30)))
+            .set_read_timeout(Some(Duration::from_millis(50)))
             .map_err(|e| TnpError::IoError(e.to_string()))?;
         stream
             .set_write_timeout(Some(Duration::from_secs(30)))
@@ -172,10 +172,7 @@ impl DaemonServer {
         let writer = stream;
         let mut channel = TnpChannel::new(reader, writer);
 
-        let mut guard = server
-            .lock()
-            .map_err(|_| TnpError::ExecutionError("Server lock poisoned".to_string()))?;
-        guard.handle_connection(&mut channel)
+        server.handle_connection(&mut channel)
     }
 
     /// Stops all running background threads and listener sockets.
@@ -204,6 +201,11 @@ impl DaemonServer {
     /// Returns a reference to the active configuration.
     pub fn config(&self) -> &DaemonConfig {
         &self.config
+    }
+
+    /// Returns a clone of the store mutex arc.
+    pub fn store(&self) -> Arc<Mutex<Store>> {
+        Arc::clone(self.tnp_server.store())
     }
 }
 

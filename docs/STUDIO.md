@@ -17,8 +17,9 @@ The native host currently provides real flows for:
 - producing `EXPLAIN` output without opening a database;
 - reading bounded durable history and plotting valid time against known time;
 - appending one validated event with an OS-synchronized durability receipt;
-- reading branch-manifest metadata; and
-- tracing declared causal ancestry and effects from bounded durable history.
+- reading branch-manifest metadata;
+- tracing declared causal ancestry and effects from bounded durable history; and
+- streaming live predicate subscriptions in real-time (CDC) directly inside Query Studio with historical snapshot catchup, pulsing green indicator, pause/resume, auto-scroll, and quick-action ribbon access.
 
 The webview never receives a raw `Store`, filesystem capability or unbounded
 history. The Rust host owns the database path, writer lock, recovery validation
@@ -48,8 +49,8 @@ npm run build
 npm run tauri dev
 ```
 
-`npm run dev` starts a browser-only frontend preview. It is intentionally
-disconnected because local database access exists only in the native Tauri host.
+`npm run dev` starts a browser-only frontend preview. It includes a simulated
+in-browser store with real-time live event streaming for fast UI iteration.
 
 Run the native checks directly with:
 
@@ -72,12 +73,27 @@ cross-check is not a native-platform qualification report.
    `source:epoch:sequence`.
 4. Use **Query Studio** with one of the supplied TemQL, compact Tem or SQL
    examples.
-5. Inspect the same events in **Temporal Plane**, **Branches & Causality**, and
+5. Switch to the **📡 Live Stream** tab in Query Studio and click **Start Stream**
+   to view newly committed events arriving in real time.
+6. Inspect the same events in **Temporal Plane**, **Branches & Causality**, and
    **Storage & Capabilities**.
 
 Opening the same database concurrently in the CLI or another Studio process can
 fail because the durable store intentionally holds a single-writer directory
 lock.
+
+## Live Subscription Streaming (CDC) in Studio
+
+Query Studio includes an interactive **📡 Live Stream (CDC)** mode tab:
+- **Predicate Pushdown**: Subscribes to events matching any SQL, TemQL, or Compact Tem filter (e.g., `SELECT * FROM temnion WHERE schema = 1`).
+- **Snapshot Catchup & Seamless Handoff**: Replays historical matching events and transitions seamlessly to newly committed live WAL events with zero gaps or duplicates.
+- **Controls & Status**:
+  - `● LIVE STREAMING` status chip with a vibrant pulsing green indicator (`@keyframes pulse-dot`).
+  - **Start Stream** / **Stop (Unsubscribe)**: Connects and disconnects the live stream.
+  - **Pause / Resume**: Freezes table view for careful inspection without dropping events.
+  - **Auto-Scroll**: Automatically scrolls to newly arriving live records.
+  - **Clear**: Clears the event buffer.
+- **Navicat Ribbon Integration**: Click `📡 Live Stream` in the ribbon toolbar to immediately jump to Query Studio with live streaming activated.
 
 ## Enforced view limits
 
@@ -96,7 +112,7 @@ silently presented as complete.
 ## Known gaps before full M23
 
 - persistent schema registry and field-mapping ingestion wizard;
-- continuation controls, subscriptions and prepared-query caching;
+- continuation controls and prepared-query caching;
 - branch creation/promotion controls;
 - 2D/3D Morton and richer causal graph rendering;
 - Arrow export from the result grid;

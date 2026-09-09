@@ -228,3 +228,142 @@ fn connector_handshake_and_ping_against_daemon() {
 
     server.shutdown();
 }
+
+#[test]
+fn daemon_live_subscription_streaming_e2e() {
+    use temnion_adapter::connector::{ActiveConnection, ConnectionConfig, QueryFormat};
+
+    let env = TestEnv::new("streaming-e2e");
+
+    // 1. Pre-populate store with historical events before daemon start
+    {
+        let mut store =
+            Store::create(&env.dir, SourceId(1), SourceEpoch(1), Limits::default()).unwrap();
+        let entity = EntityId {
+            shard: ShardId(0),
+            slot: 1,
+            generation: 1,
+        };
+        store
+            .append(vec![
+                WriteEvent {
+                    entity,
+                    schema: SchemaId(101),
+                    times: EventTimes {
+                        valid: Timestamp::new(ClockId(1), 100),
+                        observed: None,
+                        known: Timestamp::new(ClockId(1), 100),
+                    },
+                    payload: vec![1, 2, 3],
+                    causes: Vec::new(),
+                },
+                WriteEvent {
+                    entity,
+                    schema: SchemaId(102),
+                    times: EventTimes {
+                        valid: Timestamp::new(ClockId(1), 200),
+                        observed: None,
+                        known: Timestamp::new(ClockId(1), 200),
+                    },
+                    payload: vec![4, 5, 6],
+                    causes: Vec::new(),
+                },
+            ])
+            .unwrap();
+    }
+
+    let config = DaemonConfig {
+        data_dir: env.dir.clone(),
+        server_id: "daemon-stream-target".to_string(),
+        tnp_bind: format!("127.0.0.1:{}", env.port),
+        ..DaemonConfig::default()
+    };
+
+    let mut server = DaemonServer::new(config).expect("DaemonServer::new failed");
+    server.start().expect("Failed to start daemon server");
+
+    let client_cfg = ConnectionConfig {
+        host: "127.0.0.1".to_string(),
+        port: env.port,
+        database: "temnion_default".to_string(),
+        username: "streamer".to_string(),
+        auth_token: None,
+    };
+
+    let conn = ActiveConnection::connect(client_cfg).expect("Connector failed to connect");
+
+    // Subscribe with predicate filter: schema = 101, catching up from seq 0
+    let mut sub = conn
+        .subscribe(
+            "SELECT * FROM events WHERE schema = 101",
+            QueryFormat::Sql,
+            Some(0),
+            false,
+        )
+        .expect("Subscription failed");
+
+    assert_eq!(sub.snapshot_range(), (0, 2));
+
+    // Event 1 from historical snapshot (schema = 101, sequence = 0)
+    let snapshot_ev = sub
+        .next_event(Some(Duration::from_secs(3)))
+        .expect("Recv error")
+        .expect("Expected snapshot event");
+    assert_eq!(snapshot_ev.sequence, 0);
+    assert_eq!(snapshot_ev.schema, 101);
+    assert!(!snapshot_ev.is_live);
+
+    // Concurrently append new events via background thread to the daemon's underlying store
+    let store_arc = server.store();
+    let bg_thread = thread::spawn(move || {
+        thread::sleep(Duration::from_millis(50));
+        let entity = EntityId {
+            shard: ShardId(0),
+            slot: 1,
+            generation: 1,
+        };
+        let mut store = store_arc.lock().unwrap();
+        let _ = store.append(vec![
+            WriteEvent {
+                entity,
+                schema: SchemaId(101),
+                times: EventTimes {
+                    valid: Timestamp::new(ClockId(1), 300),
+                    observed: None,
+                    known: Timestamp::new(ClockId(1), 300),
+                },
+                payload: vec![7, 8, 9],
+                causes: Vec::new(),
+            },
+            WriteEvent {
+                entity,
+                schema: SchemaId(102), // Should be filtered out by subscription
+                times: EventTimes {
+                    valid: Timestamp::new(ClockId(1), 400),
+                    observed: None,
+                    known: Timestamp::new(ClockId(1), 400),
+                },
+                payload: vec![10, 11, 12],
+                causes: Vec::new(),
+            },
+        ]);
+    });
+
+    // Event 2 from live stream (schema = 101, sequence = 2)
+    let live_ev = sub
+        .next_event(Some(Duration::from_secs(3)))
+        .expect("Recv error")
+        .expect("Expected live event");
+    assert_eq!(live_ev.sequence, 2);
+    assert_eq!(live_ev.schema, 101);
+    assert!(live_ev.is_live);
+
+    bg_thread.join().unwrap();
+
+    // Clean unsubscribe
+    let mut restored_conn = sub.unsubscribe().expect("Unsubscribe failed");
+    let latency = restored_conn.ping().expect("Ping after unsubscribe failed");
+    assert!(latency.as_millis() < 1000);
+
+    server.shutdown();
+}

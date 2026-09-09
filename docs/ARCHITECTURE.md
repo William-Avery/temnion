@@ -253,6 +253,13 @@ their logical position or return a documented error. Predicate subscriptions
 share the IR and specify snapshot-to-live handoff, delivery/resume order,
 disconnect recovery, overflow, cancellation and reference holds.
 
+The implemented predicate subscription streaming engine provides:
+- **Predicate Pushdown**: Lowered from canonical query IR (SQL, TemQL, or Compact Tem) into physical plan filters (`Option<Expr>`), evaluated directly against `StoredEvent` instances via `QueryExecutor::match_and_project_event` without table scans.
+- **Atomic Snapshot Handoff**: Replays historical matching events up to the snapshot watermark, then transitions seamlessly to newly committed live events with monotonic sequence delivery and zero gaps or duplicates.
+- **Synchronous WAL Commit Broadcast**: `Store::append()` synchronously invokes registered `CommitSubscriber` callbacks immediately upon WAL batch fsync (`sync_all()`), guaranteeing zero uncommitted event leaks.
+- **SubscriptionHub & Bounded Channels**: Manages concurrent subscriber queues (`mpsc::sync_channel(1024)`) with explicit backpressure rather than silent event drops.
+- **TNP Wire Framing**: Native messages `SubscribeRequest` (`0x000C`), `SubscribeResponse` (`0x000D`), `LiveEvent` (`0x000E`), `UnsubscribeRequest` (`0x000F`), and `UnsubscribeResponse` (`0x0010`).
+
 Interface order:
 
 1. **Embedded Rust**, then `temniond`/`tem` around the same engine.

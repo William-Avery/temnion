@@ -6,6 +6,7 @@ export interface NavicatRibbonProps {
   onNewDatabase: () => void;
   onNewTable: () => void;
   onNewQuery: () => void;
+  onLiveStream?: () => void;
   onNewTime: () => void;
   onNewBranch: () => void;
   onOpenIngest: () => void;
@@ -20,6 +21,7 @@ export function NavicatRibbon({
   onNewDatabase,
   onNewTable,
   onNewQuery,
+  onLiveStream,
   onNewTime,
   onNewBranch,
   onOpenIngest,
@@ -52,6 +54,10 @@ export function NavicatRibbon({
         <button className="ribbon-btn" type="button" onClick={onNewQuery} title="Open new query editor tab">
           <span className="ribbon-icon" style={{ color: "#38bdf8" }}>⚡</span>
           <span className="ribbon-label">+ Query</span>
+        </button>
+        <button className="ribbon-btn" type="button" onClick={onLiveStream ?? onNewQuery} title="Open live subscription stream">
+          <span className="ribbon-icon" style={{ color: "#10b981" }}>📡</span>
+          <span className="ribbon-label">Live Stream</span>
         </button>
         <button className="ribbon-btn" type="button" onClick={onNewTime} title="Create a new time horizon or checkpoint">
           <span className="ribbon-icon" style={{ color: "#34d399" }}>◴</span>

@@ -4,10 +4,12 @@ use std::ffi::{OsStr, OsString};
 use std::io::{self, Write};
 use std::path::Path;
 use std::process::ExitCode;
+use std::time::Duration;
 
 use temnion_adapter::{
-    CadenceScheduler, CadenceTier, MediaRef, TzeentchAction, TzeentchActionTracer,
-    TzeentchConverter, TzeentchIntention, TzeentchOutcome, TzeentchPercept,
+    ActiveConnection, CadenceScheduler, CadenceTier, ConnectionConfig, MediaRef, QueryFormat,
+    TzeentchAction, TzeentchActionTracer, TzeentchConverter, TzeentchIntention, TzeentchOutcome,
+    TzeentchPercept,
 };
 use temnion_branch::{BranchLifecycle, BranchManager};
 use temnion_causal::CausalGraph;
@@ -51,6 +53,7 @@ Usage: tem [help | version | describe | demo]
        tem causal-trace <directory> <sequence> [max-depth]
        tem query <directory> <query-str>
        tem explain <query-str>
+       tem subscribe [options] <query-str>
        tem mcp [directory]
        tem why-demo
        tem rewrite-demo <expression>
@@ -83,6 +86,7 @@ Usage: tem [help | version | describe | demo]
   causal-trace    Trace transitive causal ancestry and effect cones for an event
   query           Execute a TemQL, compact tn:, or SQL query against a database
   explain         Parse a TemQL, compact tn:, or SQL query and show the physical execution plan
+  subscribe       Stream live real-time events over TNP with predicate filter pushdown
   mcp             Run the Model Context Protocol (MCP) server over stdio
 
 The append command is a low-level schema-ID/opaque-payload interface.
@@ -110,7 +114,8 @@ const CAPABILITIES: &str = concat!(
     "\"knowledge-consolidation\", \"transformations\", \"e-graphs\", ",
     "\"evolution\", \"adaptive-physical-memory\", \"adaptive-lifecycle\", ",
     "\"semantic-projections\", \"constitution\", \"tzeentch-adapter\", ",
-    "\"causal-action-trace\", \"scale-qualified\", \"retention-holds\"],\n",
+    "\"causal-action-trace\", \"scale-qualified\", \"retention-holds\", ",
+    "\"live-subscription-streaming\"],\n",
     "  \"durable\": true,\n",
     "  \"server\": false,\n",
     "  \"temql\": true,\n",
@@ -798,6 +803,9 @@ fn run() -> Result<(), Box<dyn Error>> {
                     field_pairs.join(", ")
                 )?;
             }
+        }
+        ("subscribe", _) => {
+            subscribe_cmd(&mut out, parameters)?;
         }
         ("mcp", []) => {
             let mut server = McpServer::new();
@@ -1611,6 +1619,171 @@ fn benchmark_scale_cmd(out: &mut impl Write, target_records: usize) -> Result<()
         scan_duration
     )?;
     writeln!(out, "  Total Test Elapsed:   {:.2?}", total_elapsed)?;
+    Ok(())
+}
+
+fn subscribe_cmd(out: &mut impl Write, args: &[OsString]) -> Result<(), Box<dyn Error>> {
+    let mut uri = None;
+    let mut host = None;
+    let mut port = None;
+    let mut db = None;
+    let mut user = None;
+    let mut auth_token = None;
+    let mut from_seq = None;
+    let mut from_now = false;
+    let mut format_override = None;
+    let mut query_parts = Vec::new();
+
+    let mut iter = args.iter();
+    while let Some(arg) = iter.next() {
+        let s = text(arg)?;
+        match s {
+            "--uri" => {
+                if let Some(val) = iter.next() {
+                    uri = Some(text(val)?.to_string());
+                }
+            }
+            "--host" => {
+                if let Some(val) = iter.next() {
+                    host = Some(text(val)?.to_string());
+                }
+            }
+            "--port" => {
+                if let Some(val) = iter.next() {
+                    port = Some(text(val)?.parse::<u16>()?);
+                }
+            }
+            "--db" | "--database" => {
+                if let Some(val) = iter.next() {
+                    db = Some(text(val)?.to_string());
+                }
+            }
+            "--user" => {
+                if let Some(val) = iter.next() {
+                    user = Some(text(val)?.to_string());
+                }
+            }
+            "--token" => {
+                if let Some(val) = iter.next() {
+                    auth_token = Some(text(val)?.to_string());
+                }
+            }
+            "--from-seq" | "--from" => {
+                if let Some(val) = iter.next() {
+                    from_seq = Some(text(val)?.parse::<u64>()?);
+                }
+            }
+            "--from-now" => {
+                from_now = true;
+            }
+            "--format" => {
+                if let Some(val) = iter.next() {
+                    match text(val)?.to_ascii_lowercase().as_str() {
+                        "sql" => format_override = Some(QueryFormat::Sql),
+                        "temql" => format_override = Some(QueryFormat::Temql),
+                        "compact" | "compact-tem" => {
+                            format_override = Some(QueryFormat::CompactTem)
+                        }
+                        other => return Err(format!("Unknown format '{other}'").into()),
+                    }
+                }
+            }
+            _ => {
+                query_parts.push(s);
+            }
+        }
+    }
+
+    let query_str = if query_parts.is_empty() {
+        "SELECT * FROM events".to_string()
+    } else {
+        query_parts.join(" ")
+    };
+
+    let format = format_override.unwrap_or_else(|| {
+        let trimmed = query_str.trim();
+        if trimmed.starts_with("tn:") || trimmed.starts_with('#') || trimmed.starts_with('$') {
+            QueryFormat::CompactTem
+        } else if trimmed.to_ascii_lowercase().starts_with("select") {
+            QueryFormat::Sql
+        } else {
+            QueryFormat::Temql
+        }
+    });
+
+    let config = ConnectionConfig::resolve(
+        uri.as_deref(),
+        host.as_deref(),
+        port,
+        db.as_deref(),
+        user.as_deref(),
+        auth_token.as_deref(),
+        None,
+    );
+
+    writeln!(
+        out,
+        "Connecting to Temnion daemon at {}...",
+        config.to_uri()
+    )?;
+    out.flush()?;
+    let conn = ActiveConnection::connect(config)?;
+    writeln!(
+        out,
+        "Connected to server '{}' (TNP v{}).",
+        conn.server_id(),
+        conn.negotiated_version()
+    )?;
+
+    let mut sub = conn.subscribe(&query_str, format, from_seq, from_now)?;
+    let (start_seq, end_seq) = sub.snapshot_range();
+    writeln!(
+        out,
+        "Live subscription established (sub_id={}). Snapshot range: [{}..{}].",
+        sub.subscription_id(),
+        start_seq,
+        end_seq
+    )?;
+    writeln!(out, "Streaming events for query: {query_str}")?;
+    writeln!(
+        out,
+        "------------------------------------------------------------"
+    )?;
+    out.flush()?;
+
+    loop {
+        match sub.next_event(Some(Duration::from_millis(500))) {
+            Ok(Some(event)) => {
+                let badge = if event.is_live { "LIVE" } else { "SNAPSHOT" };
+                writeln!(
+                    out,
+                    "[{badge}] seq={} entity={}:{}:{} schema={} valid={}:{} known={}:{} payload={}",
+                    event.sequence,
+                    event.entity_shard,
+                    event.entity_slot,
+                    event.entity_generation,
+                    event.schema,
+                    event.valid_clock,
+                    event.valid_time,
+                    event.known_clock,
+                    event.known_time,
+                    event.payload_hex
+                )?;
+                out.flush()?;
+            }
+            Ok(None) => {
+                if sub.is_unsubscribed() {
+                    writeln!(out, "Subscription terminated by server.")?;
+                    break;
+                }
+                continue;
+            }
+            Err(e) => {
+                return Err(format!("Subscription error: {e}").into());
+            }
+        }
+    }
+
     Ok(())
 }
 

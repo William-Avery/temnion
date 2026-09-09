@@ -1,9 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
-
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
-import { executeQuery, explainQuery } from "../../api";
+import { executeQuery, explainQuery, subscribeLive, type LiveStreamEvent } from "../../api";
 import { type QueryFormat, samples } from "../../types";
 import { errorText, formatBytes } from "../../utils/formatters";
 import { EventTable, Notice, PanelHeader } from "../common";
@@ -21,6 +20,11 @@ export const queryPresets = [
     label: "Basic Scan (SQL)",
     fmt: "sql" as QueryFormat,
     text: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nLIMIT 25",
+  },
+  {
+    label: "Live Subscription (SQL)",
+    fmt: "sql" as QueryFormat,
+    text: "SELECT entity, schema, valid_time, known_time, sequence\nFROM temnion\nWHERE schema = 1\nLIMIT 50",
   },
   {
     label: "Time Travel Flashback (SQL)",
@@ -68,6 +72,68 @@ export function QueryPanel({
       return [];
     }
   });
+
+  // Live Subscription Streaming State
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [isPaused, setIsPaused] = useState(false);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [streamEvents, setStreamEvents] = useState<LiveStreamEvent[]>([]);
+  const [activeResultTab, setActiveResultTab] = useState<"static" | "stream">("static");
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+  const streamBottomRef = useRef<HTMLDivElement | null>(null);
+
+  const startStreaming = () => {
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+    setStreamEvents([]);
+    setIsStreaming(true);
+    setIsPaused(false);
+    setActiveResultTab("stream");
+
+    const unsub = subscribeLive(
+      {
+        query,
+        format,
+        fromSequence: 0,
+        fromNow: false,
+      },
+      (event) => {
+        setStreamEvents((prev) => {
+          if (isPaused) return prev;
+          return [event, ...prev].slice(0, 500);
+        });
+      }
+    );
+    unsubscribeRef.current = unsub;
+  };
+
+  const stopStreaming = () => {
+    if (unsubscribeRef.current) {
+      unsubscribeRef.current();
+      unsubscribeRef.current = null;
+    }
+    setIsStreaming(false);
+  };
+
+  const clearStream = () => {
+    setStreamEvents([]);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (autoScroll && streamBottomRef.current) {
+      streamBottomRef.current.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [streamEvents, autoScroll]);
 
   useEffect(() => {
     if (initialQuery) {
@@ -212,9 +278,32 @@ export function QueryPanel({
             <button className="btn btn-secondary" disabled={explain.isPending} onClick={() => explain.mutate()} type="button">
               {explain.isPending ? "Planning…" : "Explain"}
             </button>
-            <button className="btn btn-primary" disabled={!connected || run.isPending} onClick={() => run.mutate()} type="button">
+            <button
+              className="btn btn-primary"
+              disabled={!connected || run.isPending}
+              onClick={() => {
+                setActiveResultTab("static");
+                run.mutate();
+              }}
+              type="button"
+            >
               {run.isPending ? "Executing…" : "Execute query"}
             </button>
+            {isStreaming ? (
+              <button className="btn btn-danger" onClick={stopStreaming} type="button">
+                ⏹ Stop Stream
+              </button>
+            ) : (
+              <button
+                className="btn btn-success"
+                disabled={!connected}
+                onClick={startStreaming}
+                type="button"
+                title="Subscribe to live events with filter pushdown"
+              >
+                <span className="live-pulse" /> ⚡ Live Stream
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -225,22 +314,130 @@ export function QueryPanel({
           <span>{run.data.message}</span>
         </div>
       )}
-      <div className="results-container glass-card">
-        <div className="results-header">
-          <div className="results-stats">
-            <span><strong>{run.data?.rows.length ?? 0}</strong> rows</span>
-            <span>•</span>
-            <span><strong>{run.data?.eventsScanned ?? 0}</strong> scanned</span>
-            <span>•</span>
-            <span><strong>{formatBytes(run.data?.bytesRead ?? 0)}</strong> read</span>
-            <span>•</span>
-            <span>{((run.data?.elapsedMicros ?? 0) / 1_000).toFixed(2)} ms</span>
-            <span className="stat-pill safety">forbid(unsafe_code)</span>
-            {run.data?.truncated && <span className="badge badge-warning">Truncated</span>}
-          </div>
-        </div>
-        <EventTable rows={run.data?.rows ?? []} />
+
+      {/* Result Tabs Selector */}
+      <div className="frontend-tabs" style={{ margin: "0.5rem 0 1rem 0" }} aria-label="Query results mode">
+        <button
+          className={`frontend-tab ${activeResultTab === "static" ? "active" : ""}`}
+          onClick={() => setActiveResultTab("static")}
+          type="button"
+        >
+          ⚡ Query Results ({run.data?.rows.length ?? 0})
+        </button>
+        <button
+          className={`frontend-tab ${activeResultTab === "stream" ? "active" : ""}`}
+          onClick={() => setActiveResultTab("stream")}
+          type="button"
+        >
+          <span className={`live-pulse ${isStreaming && !isPaused ? "" : "paused"}`} />
+          Live Stream ({streamEvents.length})
+        </button>
       </div>
+
+      {activeResultTab === "stream" ? (
+        <div className="results-container glass-card">
+          <div className="results-header">
+            <div className="stream-controls-bar" style={{ width: "100%" }}>
+              <div className="results-stats" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                {isStreaming ? (
+                  <span className={`stream-meta-badge ${isPaused ? "paused" : ""}`}>
+                    <span className={`live-pulse ${isPaused ? "paused" : ""}`} />
+                    {isPaused ? "STREAM PAUSED" : "LIVE STREAMING"}
+                  </span>
+                ) : (
+                  <span className="stream-meta-badge paused">STREAM STOPPED</span>
+                )}
+                <span><strong>{streamEvents.length}</strong> events</span>
+                <span>•</span>
+                <span style={{ color: "#34d399" }}><strong>{streamEvents.filter((e) => e.isLive).length}</strong> live</span>
+                <span>•</span>
+                <span style={{ color: "#60a5fa" }}><strong>{streamEvents.filter((e) => !e.isLive).length}</strong> snapshot</span>
+                <span className="stat-pill safety">forbid(unsafe_code)</span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                {isStreaming && (
+                  <button
+                    className="btn btn-secondary btn-sm"
+                    type="button"
+                    onClick={() => setIsPaused(!isPaused)}
+                  >
+                    {isPaused ? "▶ Resume" : "❚❚ Pause"}
+                  </button>
+                )}
+                <label style={{ fontSize: "12px", display: "flex", alignItems: "center", gap: "4px", cursor: "pointer", color: "#94a3b8" }}>
+                  <input
+                    type="checkbox"
+                    checked={autoScroll}
+                    onChange={(e) => setAutoScroll(e.target.checked)}
+                  />
+                  Auto-scroll
+                </label>
+                <button className="btn btn-secondary btn-sm" type="button" onClick={clearStream}>
+                  Clear
+                </button>
+              </div>
+            </div>
+          </div>
+          {streamEvents.length > 0 ? (
+            <div className="stream-table-container">
+              <table className="event-table">
+                <thead>
+                  <tr>
+                    <th>Mode</th>
+                    <th>Seq</th>
+                    <th>Entity</th>
+                    <th>Schema</th>
+                    <th>Valid Time</th>
+                    <th>Known Time</th>
+                    <th>Payload Hex</th>
+                    <th>Received At</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {streamEvents.map((ev, idx) => (
+                    <tr key={`${ev.subscriptionId}-${ev.sequence}-${idx}`}>
+                      <td>
+                        <span className={`badge ${ev.isLive ? "badge-live" : "badge-snapshot"}`}>
+                          {ev.isLive ? "LIVE" : "SNAPSHOT"}
+                        </span>
+                      </td>
+                      <td><strong>#{ev.sequence}</strong></td>
+                      <td><code>{ev.entity}</code></td>
+                      <td><span className="badge badge-info">Schema {ev.schema}</span></td>
+                      <td><code>{ev.validClock}:{ev.validTime}</code></td>
+                      <td><code>{ev.knownClock}:{ev.knownTime}</code></td>
+                      <td><code style={{ color: "#a5b4fc" }}>{ev.payloadHex || "0x00"}</code></td>
+                      <td style={{ color: "#94a3b8", fontSize: "11px" }}>{ev.receivedAt}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <div ref={streamBottomRef} />
+            </div>
+          ) : (
+            <div style={{ padding: "40px", textAlign: "center", color: "#94a3b8" }}>
+              <span className="live-pulse" /> {isStreaming ? "Listening for real-time subscription events..." : "Click '⚡ Live Stream' to start live subscription streaming."}
+            </div>
+          )}
+        </div>
+      ) : (
+        <div className="results-container glass-card">
+          <div className="results-header">
+            <div className="results-stats">
+              <span><strong>{run.data?.rows.length ?? 0}</strong> rows</span>
+              <span>•</span>
+              <span><strong>{run.data?.eventsScanned ?? 0}</strong> scanned</span>
+              <span>•</span>
+              <span><strong>{formatBytes(run.data?.bytesRead ?? 0)}</strong> read</span>
+              <span>•</span>
+              <span>{((run.data?.elapsedMicros ?? 0) / 1_000).toFixed(2)} ms</span>
+              <span className="stat-pill safety">forbid(unsafe_code)</span>
+              {run.data?.truncated && <span className="badge badge-warning">Truncated</span>}
+            </div>
+          </div>
+          <EventTable rows={run.data?.rows ?? []} />
+        </div>
+      )}
       {!!bookmarks.length && (
         <div className="glass-card bookmark-card">
           <div className="card-title">Local query bookmarks</div>

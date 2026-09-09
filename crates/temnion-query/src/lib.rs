@@ -26,6 +26,7 @@ use temnion_core::{
     Timestamp,
 };
 use temnion_events::HistoryFilter;
+use temnion_format::StoredEvent;
 use temnion_index::{BoundingBox2D, BoundingBox3D, GridChunker2D};
 use temnion_storage::{StorageQueryBudget, Store};
 
@@ -605,6 +606,58 @@ impl QueryExecutor {
                 "execute_storage_scan requires PhysicalPlan::StorageScan".to_string(),
             )),
         }
+    }
+
+    /// Evaluates whether a [`StoredEvent`] satisfies an optional filter expression,
+    /// and extracts a [`QueryRow`] if matching.
+    pub fn match_and_project_event(
+        filter: Option<&Expr>,
+        projection: Option<&[String]>,
+        event: &StoredEvent,
+    ) -> Result<Option<QueryRow>, QueryError> {
+        let mut fields = HashMap::new();
+        fields.insert(
+            "entity".to_string(),
+            Literal::String(format!(
+                "{}:{}:{}",
+                event.entity.shard.0, event.entity.slot, event.entity.generation
+            )),
+        );
+        fields.insert("schema".to_string(), Literal::Int(event.schema.0 as i64));
+        fields.insert(
+            "valid_time".to_string(),
+            Literal::Int(event.times.valid.ticks as i64),
+        );
+        fields.insert(
+            "known_time".to_string(),
+            Literal::Int(event.times.known.ticks as i64),
+        );
+        fields.insert(
+            "sequence".to_string(),
+            Literal::Int(event.id.sequence as i64),
+        );
+
+        if let Some(pred) = filter {
+            match pred.evaluate(&fields) {
+                Ok(Literal::Bool(true)) => {}
+                Ok(Literal::Bool(false)) => return Ok(None),
+                Err(err) => return Err(err),
+                _ => return Ok(None),
+            }
+        }
+
+        if let Some(proj) = projection {
+            fields.retain(|k, _| proj.contains(k));
+        }
+
+        Ok(Some(QueryRow {
+            entity: event.entity,
+            schema: event.schema,
+            valid_time: event.times.valid,
+            known_time: event.times.known,
+            sequence: event.id.sequence,
+            fields,
+        }))
     }
 
     /// Executes a causal trace query against a causal graph.

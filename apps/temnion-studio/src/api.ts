@@ -227,6 +227,27 @@ export interface EntitySummary {
   lastValidTime: number;
 }
 
+export interface LiveSubscriptionOptions {
+  query: string;
+  format?: "temql" | "compact" | "sql";
+  fromSequence?: number;
+  fromNow?: boolean;
+}
+
+export interface LiveStreamEvent {
+  subscriptionId: number;
+  sequence: number;
+  isLive: boolean;
+  entity: string;
+  schema: number;
+  validClock: number;
+  validTime: number;
+  knownClock: number;
+  knownTime: number;
+  payloadHex: string;
+  receivedAt: string;
+}
+
 export const isNativeRuntime =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
@@ -951,6 +972,7 @@ class InBrowserStore {
         "segment-manifest",
         "connections-manager",
         "schema-catalog",
+        "live-subscription-streaming",
       ],
     };
   }
@@ -1123,6 +1145,7 @@ class InBrowserStore {
     };
 
     this.events.push(newRow);
+    this.dispatchLiveEvent(newRow);
 
     return {
       firstEvent: newRow.eventId,
@@ -1159,11 +1182,141 @@ class InBrowserStore {
       truncated: false,
     };
   }
+
+  subscribers: Array<{
+    id: number;
+    query: string;
+    schemaFilter?: number;
+    onEvent: (event: LiveStreamEvent) => void;
+  }> = [];
+  nextSubId: number = 1;
+  streamIntervalTimer: ReturnType<typeof setInterval> | null = null;
+
+  dispatchLiveEvent(event: EventRow) {
+    const receivedAt = new Date().toLocaleTimeString([], {
+      hour12: false,
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    for (const sub of this.subscribers) {
+      if (sub.schemaFilter === undefined || event.schema === sub.schemaFilter) {
+        sub.onEvent({
+          subscriptionId: sub.id,
+          sequence: event.sequence,
+          isLive: true,
+          entity: event.entity,
+          schema: event.schema,
+          validClock: event.validClock,
+          validTime: event.validTime,
+          knownClock: event.knownClock,
+          knownTime: event.knownTime,
+          payloadHex: event.payloadHex,
+          receivedAt,
+        });
+      }
+    }
+  }
+
+  subscribeLive(
+    options: LiveSubscriptionOptions,
+    onEvent: (event: LiveStreamEvent) => void
+  ): () => void {
+    const subId = this.nextSubId++;
+    const upper = options.query.toUpperCase();
+    let schemaFilter: number | undefined;
+    if (upper.includes("SCHEMA = 1") || upper.includes("SCHEMA=1")) schemaFilter = 1;
+    else if (upper.includes("SCHEMA = 2") || upper.includes("SCHEMA=2")) schemaFilter = 2;
+    else if (upper.includes("SCHEMA = 3") || upper.includes("SCHEMA=3")) schemaFilter = 3;
+    else if (upper.includes("SCHEMA = 4") || upper.includes("SCHEMA=4")) schemaFilter = 4;
+
+    // Snapshot catch-up phase
+    if (!options.fromNow) {
+      const start = options.fromSequence ?? 0;
+      const snapshotEvents = this.events.slice(start);
+      for (const ev of snapshotEvents) {
+        if (schemaFilter === undefined || ev.schema === schemaFilter) {
+          onEvent({
+            subscriptionId: subId,
+            sequence: ev.sequence,
+            isLive: false,
+            entity: ev.entity,
+            schema: ev.schema,
+            validClock: ev.validClock,
+            validTime: ev.validTime,
+            knownClock: ev.knownClock,
+            knownTime: ev.knownTime,
+            payloadHex: ev.payloadHex,
+            receivedAt: new Date().toLocaleTimeString([], {
+              hour12: false,
+              hour: "2-digit",
+              minute: "2-digit",
+              second: "2-digit",
+            }),
+          });
+        }
+      }
+    }
+
+    const sub = { id: subId, query: options.query, schemaFilter, onEvent };
+    this.subscribers.push(sub);
+
+    // Background streaming loop
+    if (!this.streamIntervalTimer) {
+      this.streamIntervalTimer = setInterval(() => {
+        if (this.subscribers.length === 0) {
+          if (this.streamIntervalTimer) {
+            clearInterval(this.streamIntervalTimer);
+            this.streamIntervalTimer = null;
+          }
+          return;
+        }
+        const randomSchema = Math.floor(Math.random() * 4) + 1;
+        const seq = this.events.length;
+        const vTime = 1200 + seq * 10;
+        const kTime = vTime + 2;
+        const liveEvent: EventRow = {
+          eventId: `1:1:${seq}`,
+          sequence: seq,
+          entity: `0:${randomSchema}`,
+          schema: randomSchema,
+          validClock: 1,
+          validTime: vTime,
+          knownClock: 1,
+          knownTime: kTime,
+          payloadHex: `01${seq.toString(16).padStart(4, "0")}deadbeef`,
+          payloadBytes: 8,
+          causes: seq > 0 ? [`1:1:${seq - 1}`] : [],
+          fields: [
+            { name: "stream_origin", value: "live_subscription_ticker" },
+            { name: "sample_tick", value: `${vTime}` },
+          ],
+        };
+        this.events.push(liveEvent);
+        this.dispatchLiveEvent(liveEvent);
+      }, 1500);
+    }
+
+    return () => {
+      this.subscribers = this.subscribers.filter((s) => s.id !== subId);
+      if (this.subscribers.length === 0 && this.streamIntervalTimer) {
+        clearInterval(this.streamIntervalTimer);
+        this.streamIntervalTimer = null;
+      }
+    };
+  }
 }
 
 const inBrowserStore = new InBrowserStore();
 
 export const browserStatus: EngineStatus = inBrowserStore.getStatus();
+
+export function subscribeLive(
+  options: LiveSubscriptionOptions,
+  onEvent: (event: LiveStreamEvent) => void
+): () => void {
+  return inBrowserStore.subscribeLive(options, onEvent);
+}
 
 export async function getEngineStatus(): Promise<EngineStatus> {
   return isNativeRuntime

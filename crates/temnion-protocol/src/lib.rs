@@ -18,14 +18,17 @@ use std::collections::HashMap;
 use std::fmt;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver, SyncSender};
 use std::sync::{Arc, Mutex};
+use std::thread;
+use std::time::Duration;
 
 use crc32fast::Hasher;
 use temnion_core::{ClockId, EntityId, SchemaId, ShardId, Timestamp};
-use temnion_format::Limits;
+use temnion_format::{Limits, StoredEvent};
 use temnion_query::{
-    QueryBudget as EngineQueryBudget, QueryExecutor, QueryResult, QueryRow, parse_compact_tem,
-    parse_sql, parse_temql, plan_query,
+    Expr, PhysicalPlan, QueryBudget as EngineQueryBudget, QueryExecutor, QueryResult, QueryRow,
+    parse_compact_tem, parse_sql, parse_temql, plan_query,
 };
 use temnion_storage::{RecoveryMode, Store};
 
@@ -59,6 +62,11 @@ pub enum TnpMessageType {
     ErrorResponse = 0x0009,
     Ping = 0x000A,
     Pong = 0x000B,
+    SubscribeRequest = 0x000C,
+    SubscribeResponse = 0x000D,
+    LiveEvent = 0x000E,
+    UnsubscribeRequest = 0x000F,
+    UnsubscribeResponse = 0x0010,
 }
 
 impl TryFrom<u16> for TnpMessageType {
@@ -77,6 +85,11 @@ impl TryFrom<u16> for TnpMessageType {
             0x0009 => Ok(Self::ErrorResponse),
             0x000A => Ok(Self::Ping),
             0x000B => Ok(Self::Pong),
+            0x000C => Ok(Self::SubscribeRequest),
+            0x000D => Ok(Self::SubscribeResponse),
+            0x000E => Ok(Self::LiveEvent),
+            0x000F => Ok(Self::UnsubscribeRequest),
+            0x0010 => Ok(Self::UnsubscribeResponse),
             other => Err(TnpError::UnknownMessageType(other)),
         }
     }
@@ -95,6 +108,8 @@ pub enum TnpError {
     HandshakeFailed(String),
     ExecutionError(String),
     IoError(String),
+    TimedOut,
+    ConnectionClosed,
 }
 
 impl fmt::Display for TnpError {
@@ -117,6 +132,8 @@ impl fmt::Display for TnpError {
             Self::HandshakeFailed(msg) => write!(f, "TNP handshake failed: {msg}"),
             Self::ExecutionError(msg) => write!(f, "TNP execution error: {msg}"),
             Self::IoError(msg) => write!(f, "TNP IO error: {msg}"),
+            Self::TimedOut => write!(f, "TNP socket read timed out"),
+            Self::ConnectionClosed => write!(f, "TNP connection closed by peer"),
         }
     }
 }
@@ -402,6 +419,356 @@ impl QueryRequest {
 }
 
 // ---------------------------------------------------------------------------
+// Live Subscription Payloads & Hub
+// ---------------------------------------------------------------------------
+
+/// Subscription request payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubscribeRequest {
+    pub format: QueryFormat,
+    pub from_sequence: Option<u64>,
+    pub from_now: bool,
+    pub query_str: String,
+}
+
+impl SubscribeRequest {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.push(self.format as u8);
+        buf.push(if self.from_now { 1 } else { 0 });
+        buf.extend_from_slice(&self.from_sequence.unwrap_or(0).to_le_bytes());
+        buf.extend_from_slice(&(self.query_str.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.query_str.as_bytes());
+        buf
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, TnpError> {
+        if bytes.len() < 14 {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated SubscribeRequest".to_string(),
+            ));
+        }
+        let format = match bytes[0] {
+            1 => QueryFormat::Temql,
+            2 => QueryFormat::CompactTem,
+            3 => QueryFormat::Sql,
+            _ => {
+                return Err(TnpError::ProtocolViolation(
+                    "Unknown query format".to_string(),
+                ));
+            }
+        };
+        let from_now = bytes[1] != 0;
+        let from_seq_raw = u64::from_le_bytes([
+            bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7], bytes[8], bytes[9],
+        ]);
+        let from_sequence = if from_now { None } else { Some(from_seq_raw) };
+        let q_len = u32::from_le_bytes([bytes[10], bytes[11], bytes[12], bytes[13]]) as usize;
+        if bytes.len() < 14 + q_len {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated SubscribeRequest string".to_string(),
+            ));
+        }
+        let query_str = String::from_utf8(bytes[14..14 + q_len].to_vec())
+            .map_err(|e| TnpError::ProtocolViolation(e.to_string()))?;
+
+        Ok(Self {
+            format,
+            from_sequence,
+            from_now,
+            query_str,
+        })
+    }
+}
+
+/// Subscription acknowledgment response payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SubscribeResponse {
+    pub subscription_id: u64,
+    pub success: bool,
+    pub snapshot_start: u64,
+    pub snapshot_end: u64,
+    pub message: String,
+}
+
+impl SubscribeResponse {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.subscription_id.to_le_bytes());
+        buf.push(if self.success { 1 } else { 0 });
+        buf.extend_from_slice(&self.snapshot_start.to_le_bytes());
+        buf.extend_from_slice(&self.snapshot_end.to_le_bytes());
+        buf.extend_from_slice(&(self.message.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.message.as_bytes());
+        buf
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, TnpError> {
+        if bytes.len() < 29 {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated SubscribeResponse".to_string(),
+            ));
+        }
+        let subscription_id = u64::from_le_bytes([
+            bytes[0], bytes[1], bytes[2], bytes[3], bytes[4], bytes[5], bytes[6], bytes[7],
+        ]);
+        let success = bytes[8] != 0;
+        let snapshot_start = u64::from_le_bytes([
+            bytes[9], bytes[10], bytes[11], bytes[12], bytes[13], bytes[14], bytes[15], bytes[16],
+        ]);
+        let snapshot_end = u64::from_le_bytes([
+            bytes[17], bytes[18], bytes[19], bytes[20], bytes[21], bytes[22], bytes[23], bytes[24],
+        ]);
+        let msg_len = u32::from_le_bytes([bytes[25], bytes[26], bytes[27], bytes[28]]) as usize;
+        if bytes.len() < 29 + msg_len {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated SubscribeResponse message".to_string(),
+            ));
+        }
+        let message = String::from_utf8(bytes[29..29 + msg_len].to_vec())
+            .map_err(|e| TnpError::ProtocolViolation(e.to_string()))?;
+
+        Ok(Self {
+            subscription_id,
+            success,
+            snapshot_start,
+            snapshot_end,
+            message,
+        })
+    }
+}
+
+/// Live event record streamed to subscribers.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LiveEventRecord {
+    pub subscription_id: u64,
+    pub sequence: u64,
+    pub is_live: bool,
+    pub entity_shard: u32,
+    pub entity_slot: u32,
+    pub entity_generation: u32,
+    pub schema: u32,
+    pub valid_clock: u32,
+    pub valid_time: u64,
+    pub known_clock: u32,
+    pub known_time: u64,
+    pub payload_hex: String,
+}
+
+impl LiveEventRecord {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::new();
+        buf.extend_from_slice(&self.subscription_id.to_le_bytes());
+        buf.extend_from_slice(&self.sequence.to_le_bytes());
+        buf.push(if self.is_live { 1 } else { 0 });
+        buf.extend_from_slice(&self.entity_shard.to_le_bytes());
+        buf.extend_from_slice(&self.entity_slot.to_le_bytes());
+        buf.extend_from_slice(&self.entity_generation.to_le_bytes());
+        buf.extend_from_slice(&self.schema.to_le_bytes());
+        buf.extend_from_slice(&self.valid_clock.to_le_bytes());
+        buf.extend_from_slice(&self.valid_time.to_le_bytes());
+        buf.extend_from_slice(&self.known_clock.to_le_bytes());
+        buf.extend_from_slice(&self.known_time.to_le_bytes());
+        buf.extend_from_slice(&(self.payload_hex.len() as u32).to_le_bytes());
+        buf.extend_from_slice(self.payload_hex.as_bytes());
+        buf
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, TnpError> {
+        if bytes.len() < 61 {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated LiveEventRecord".to_string(),
+            ));
+        }
+        let subscription_id = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        let sequence = u64::from_le_bytes(bytes[8..16].try_into().unwrap());
+        let is_live = bytes[16] != 0;
+        let entity_shard = u32::from_le_bytes(bytes[17..21].try_into().unwrap());
+        let entity_slot = u32::from_le_bytes(bytes[21..25].try_into().unwrap());
+        let entity_generation = u32::from_le_bytes(bytes[25..29].try_into().unwrap());
+        let schema = u32::from_le_bytes(bytes[29..33].try_into().unwrap());
+        let valid_clock = u32::from_le_bytes(bytes[33..37].try_into().unwrap());
+        let valid_time = u64::from_le_bytes(bytes[37..45].try_into().unwrap());
+        let known_clock = u32::from_le_bytes(bytes[45..49].try_into().unwrap());
+        let known_time = u64::from_le_bytes(bytes[49..57].try_into().unwrap());
+        let hex_len = u32::from_le_bytes(bytes[57..61].try_into().unwrap()) as usize;
+        if bytes.len() < 61 + hex_len {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated LiveEventRecord payload_hex".to_string(),
+            ));
+        }
+        let payload_hex = String::from_utf8(bytes[61..61 + hex_len].to_vec())
+            .map_err(|e| TnpError::ProtocolViolation(e.to_string()))?;
+
+        Ok(Self {
+            subscription_id,
+            sequence,
+            is_live,
+            entity_shard,
+            entity_slot,
+            entity_generation,
+            schema,
+            valid_clock,
+            valid_time,
+            known_clock,
+            known_time,
+            payload_hex,
+        })
+    }
+}
+
+/// Unsubscribe request payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsubscribeRequest {
+    pub subscription_id: u64,
+}
+
+impl UnsubscribeRequest {
+    pub fn encode(&self) -> Vec<u8> {
+        self.subscription_id.to_le_bytes().to_vec()
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, TnpError> {
+        if bytes.len() < 8 {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated UnsubscribeRequest".to_string(),
+            ));
+        }
+        let subscription_id = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        Ok(Self { subscription_id })
+    }
+}
+
+/// Unsubscribe response payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnsubscribeResponse {
+    pub subscription_id: u64,
+    pub success: bool,
+}
+
+impl UnsubscribeResponse {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(9);
+        buf.extend_from_slice(&self.subscription_id.to_le_bytes());
+        buf.push(if self.success { 1 } else { 0 });
+        buf
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, TnpError> {
+        if bytes.len() < 9 {
+            return Err(TnpError::ProtocolViolation(
+                "Truncated UnsubscribeResponse".to_string(),
+            ));
+        }
+        let subscription_id = u64::from_le_bytes(bytes[0..8].try_into().unwrap());
+        let success = bytes[8] != 0;
+        Ok(Self {
+            subscription_id,
+            success,
+        })
+    }
+}
+
+struct ActiveSubscription {
+    filter: Option<Expr>,
+    sender: SyncSender<LiveEventRecord>,
+}
+
+/// Thread-safe subscription hub broadcasting committed events to matching subscribers.
+pub struct SubscriptionHub {
+    next_id: AtomicU64,
+    subscribers: Mutex<HashMap<u64, ActiveSubscription>>,
+}
+
+impl Default for SubscriptionHub {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl SubscriptionHub {
+    pub fn new() -> Self {
+        Self {
+            next_id: AtomicU64::new(1),
+            subscribers: Mutex::new(HashMap::new()),
+        }
+    }
+
+    /// Registers a subscriber with an optional query filter and returns (subscription_id, Receiver).
+    pub fn register(&self, filter: Option<Expr>) -> (u64, Receiver<LiveEventRecord>) {
+        let id = self.next_id.fetch_add(1, Ordering::SeqCst);
+        let (sender, receiver) = mpsc::sync_channel(1024);
+        if let Ok(mut subs) = self.subscribers.lock() {
+            subs.insert(id, ActiveSubscription { filter, sender });
+        }
+        (id, receiver)
+    }
+
+    /// Unregisters an active subscription.
+    pub fn unregister(&self, id: u64) -> bool {
+        if let Ok(mut subs) = self.subscribers.lock() {
+            subs.remove(&id).is_some()
+        } else {
+            false
+        }
+    }
+
+    /// Dispatches committed events to all active subscribers.
+    pub fn dispatch_events(&self, events: &[StoredEvent]) {
+        if events.is_empty() {
+            return;
+        }
+        let mut disconnected = Vec::new();
+        if let Ok(subs) = self.subscribers.lock() {
+            for (&id, sub) in subs.iter() {
+                for event in events {
+                    if let Ok(Some(_)) =
+                        QueryExecutor::match_and_project_event(sub.filter.as_ref(), None, event)
+                    {
+                        let record = LiveEventRecord {
+                            subscription_id: id,
+                            sequence: event.id.sequence,
+                            is_live: true,
+                            entity_shard: event.entity.shard.0,
+                            entity_slot: event.entity.slot,
+                            entity_generation: event.entity.generation,
+                            schema: event.schema.0,
+                            valid_clock: event.times.valid.clock.0,
+                            valid_time: event.times.valid.ticks,
+                            known_clock: event.times.known.clock.0,
+                            known_time: event.times.known.ticks,
+                            payload_hex: hex_encode(&event.payload),
+                        };
+                        if let Err(mpsc::TrySendError::Disconnected(_)) =
+                            sub.sender.try_send(record)
+                        {
+                            disconnected.push(id);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+        if !disconnected.is_empty() {
+            if let Ok(mut subs) = self.subscribers.lock() {
+                for id in disconnected {
+                    subs.remove(&id);
+                }
+            }
+        }
+    }
+}
+
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for b in bytes {
+        use std::fmt::Write;
+        let _ = write!(s, "{:02x}", b);
+    }
+    s
+}
+
+// ---------------------------------------------------------------------------
 // Local IPC Transport & Server Dispatcher (M19)
 // ---------------------------------------------------------------------------
 
@@ -452,35 +819,78 @@ impl<R: Read, W: Write> TnpChannel<R, W> {
 
             // Read more data
             let mut chunk = [0u8; 4096];
-            let n = self
-                .reader
-                .read(&mut chunk)
-                .map_err(|e| TnpError::IoError(e.to_string()))?;
+            let n = match self.reader.read(&mut chunk) {
+                Ok(n) => n,
+                Err(ref e)
+                    if e.kind() == std::io::ErrorKind::TimedOut
+                        || e.kind() == std::io::ErrorKind::WouldBlock =>
+                {
+                    return Err(TnpError::TimedOut);
+                }
+                Err(e) => return Err(TnpError::IoError(e.to_string())),
+            };
             if n == 0 {
-                return Err(TnpError::IoError("Connection closed by peer".to_string()));
+                return Err(TnpError::ConnectionClosed);
             }
             self.read_buf.extend_from_slice(&chunk[..n]);
         }
+    }
+
+    /// Access the underlying reader.
+    pub fn reader(&self) -> &R {
+        &self.reader
+    }
+
+    /// Access the underlying reader mutably.
+    pub fn reader_mut(&mut self) -> &mut R {
+        &mut self.reader
+    }
+
+    /// Access the underlying writer.
+    pub fn writer(&self) -> &W {
+        &self.writer
+    }
+
+    /// Access the underlying writer mutably.
+    pub fn writer_mut(&mut self) -> &mut W {
+        &mut self.writer
     }
 }
 
 /// Server dispatcher evaluating incoming TNP requests against a database store.
 pub struct TnpServer {
-    store: Store,
+    store: Arc<Mutex<Store>>,
     server_id: String,
+    hub: Arc<SubscriptionHub>,
 }
 
 impl TnpServer {
-    pub fn new(store: Store, server_id: impl Into<String>) -> Self {
+    pub fn new(mut store: Store, server_id: impl Into<String>) -> Self {
+        let hub = Arc::new(SubscriptionHub::new());
+        let hub_clone = Arc::clone(&hub);
+        store.add_commit_subscriber(move |records| {
+            hub_clone.dispatch_events(records);
+        });
         Self {
-            store,
+            store: Arc::new(Mutex::new(store)),
             server_id: server_id.into(),
+            hub,
         }
+    }
+
+    /// Returns a reference to the shared subscription hub.
+    pub fn hub(&self) -> Arc<SubscriptionHub> {
+        Arc::clone(&self.hub)
+    }
+
+    /// Returns a reference to the underlying store mutex.
+    pub fn store(&self) -> &Arc<Mutex<Store>> {
+        &self.store
     }
 
     /// Handles an incoming TNP connection stream.
     pub fn handle_connection<R: Read, W: Write>(
-        &mut self,
+        &self,
         channel: &mut TnpChannel<R, W>,
     ) -> Result<(), TnpError> {
         // 1. Handshake exchange
@@ -516,12 +926,12 @@ impl TnpServer {
             });
         }
 
-        // Capability flags: 0x01 = query, 0x02 = describe, 0x04 = stream
+        // Capability flags: 0x01 = query, 0x02 = describe, 0x04 = stream, 0x08 = subscribe (0x0F)
         let resp = HandshakeResponse {
             success: true,
             negotiated_version: TNP_VERSION,
             server_id: self.server_id.clone(),
-            capability_flags: 0x07,
+            capability_flags: 0x0F,
         };
         channel.send(&TnpPacket::new(
             TnpMessageType::HandshakeResponse,
@@ -533,7 +943,11 @@ impl TnpServer {
         loop {
             let req_packet = match channel.recv() {
                 Ok(p) => p,
-                Err(TnpError::IoError(_)) => break, // Peer closed connection
+                Err(TnpError::ConnectionClosed) | Err(TnpError::IoError(_)) => break, // Peer closed connection
+                Err(TnpError::TimedOut) => {
+                    thread::sleep(Duration::from_millis(10));
+                    continue;
+                }
                 Err(e) => return Err(e),
             };
 
@@ -547,7 +961,7 @@ impl TnpServer {
                 }
                 TnpMessageType::DescribeRequest => {
                     let desc = format!(
-                        "{{\"server_id\":\"{}\",\"version\":{},\"capabilities\":[\"tnp\",\"query-ir\",\"temql\",\"compact-tem\",\"sql\",\"arrow-columnar\"]}}",
+                        "{{\"server_id\":\"{}\",\"version\":{},\"capabilities\":[\"tnp\",\"query-ir\",\"temql\",\"compact-tem\",\"sql\",\"arrow-columnar\",\"live-subscription\"]}}",
                         self.server_id, TNP_VERSION
                     );
                     channel.send(&TnpPacket::new(
@@ -574,9 +988,13 @@ impl TnpServer {
                         max_bytes: Some(32 * 1024 * 1024),
                     };
 
-                    let result =
-                        QueryExecutor::execute_storage_scan(&mut self.store, &physical, &budget)
-                            .map_err(|e| TnpError::ExecutionError(e.to_string()))?;
+                    let result = {
+                        let mut store_guard = self.store.lock().map_err(|_| {
+                            TnpError::ExecutionError("Store lock poisoned".to_string())
+                        })?;
+                        QueryExecutor::execute_storage_scan(&mut store_guard, &physical, &budget)
+                            .map_err(|e| TnpError::ExecutionError(e.to_string()))?
+                    };
 
                     // Send QueryResponse header
                     let resp_header = format!(
@@ -614,6 +1032,177 @@ impl TnpServer {
                         TnpMessageType::StreamEnd,
                         req_packet.stream_id,
                         (result.rows.len() as u32).to_le_bytes().to_vec(),
+                    ))?;
+                }
+                TnpMessageType::SubscribeRequest => {
+                    let sub_req = SubscribeRequest::decode(&req_packet.payload)?;
+                    let logical = match sub_req.format {
+                        QueryFormat::Temql => parse_temql(&sub_req.query_str),
+                        QueryFormat::CompactTem => parse_compact_tem(&sub_req.query_str),
+                        QueryFormat::Sql => parse_sql(&sub_req.query_str),
+                    };
+
+                    let logical = match logical {
+                        Ok(l) => l,
+                        Err(e) => {
+                            let sub_resp = SubscribeResponse {
+                                subscription_id: 0,
+                                success: false,
+                                snapshot_start: 0,
+                                snapshot_end: 0,
+                                message: format!("Failed to parse subscription query: {e}"),
+                            };
+                            channel.send(&TnpPacket::new(
+                                TnpMessageType::SubscribeResponse,
+                                req_packet.stream_id,
+                                sub_resp.encode(),
+                            ))?;
+                            continue;
+                        }
+                    };
+
+                    let physical = plan_query(&logical);
+                    let filter = match &physical {
+                        PhysicalPlan::StorageScan {
+                            pushdown_filter, ..
+                        } => pushdown_filter.clone(),
+                        _ => None,
+                    };
+
+                    let current_seq = {
+                        let store_guard = self.store.lock().map_err(|_| {
+                            TnpError::ExecutionError("Store lock poisoned".to_string())
+                        })?;
+                        store_guard.len()
+                    };
+                    let (snapshot_start, snapshot_end) = if sub_req.from_now {
+                        (current_seq, current_seq)
+                    } else {
+                        let start = sub_req.from_sequence.unwrap_or(0).min(current_seq);
+                        (start, current_seq)
+                    };
+
+                    let (sub_id, receiver) = self.hub.register(filter.clone());
+
+                    let sub_resp = SubscribeResponse {
+                        subscription_id: sub_id,
+                        success: true,
+                        snapshot_start,
+                        snapshot_end,
+                        message: format!("Subscribed to live events (id={sub_id})"),
+                    };
+                    channel.send(&TnpPacket::new(
+                        TnpMessageType::SubscribeResponse,
+                        req_packet.stream_id,
+                        sub_resp.encode(),
+                    ))?;
+
+                    // Phase 1: Replay historical snapshot if requested
+                    if snapshot_start < snapshot_end {
+                        let budget = EngineQueryBudget {
+                            max_rows: Some((snapshot_end - snapshot_start) as usize),
+                            max_events_scanned: Some(65_536),
+                            max_bytes: Some(32 * 1024 * 1024),
+                        };
+                        let scan_result = {
+                            let mut store_guard = self.store.lock().map_err(|_| {
+                                TnpError::ExecutionError("Store lock poisoned".to_string())
+                            })?;
+                            QueryExecutor::execute_storage_scan(
+                                &mut store_guard,
+                                &physical,
+                                &budget,
+                            )
+                        };
+                        if let Ok(result) = scan_result {
+                            for row in result.rows {
+                                if row.sequence >= snapshot_start && row.sequence < snapshot_end {
+                                    let record = LiveEventRecord {
+                                        subscription_id: sub_id,
+                                        sequence: row.sequence,
+                                        is_live: false,
+                                        entity_shard: row.entity.shard.0,
+                                        entity_slot: row.entity.slot,
+                                        entity_generation: row.entity.generation,
+                                        schema: row.schema.0,
+                                        valid_clock: row.valid_time.clock.0,
+                                        valid_time: row.valid_time.ticks,
+                                        known_clock: row.known_time.clock.0,
+                                        known_time: row.known_time.ticks,
+                                        payload_hex: String::new(),
+                                    };
+                                    channel.send(&TnpPacket::new(
+                                        TnpMessageType::LiveEvent,
+                                        req_packet.stream_id,
+                                        record.encode(),
+                                    ))?;
+                                }
+                            }
+                        }
+                    }
+
+                    // Phase 2: Live streaming loop
+                    loop {
+                        // Drain live events
+                        while let Ok(event) = receiver.try_recv() {
+                            channel.send(&TnpPacket::new(
+                                TnpMessageType::LiveEvent,
+                                req_packet.stream_id,
+                                event.encode(),
+                            ))?;
+                        }
+
+                        // Poll for incoming control packet from client
+                        match channel.recv() {
+                            Ok(pkt) => match pkt.message_type {
+                                TnpMessageType::UnsubscribeRequest => {
+                                    let un_req = UnsubscribeRequest::decode(&pkt.payload)?;
+                                    self.hub.unregister(un_req.subscription_id);
+                                    let un_resp = UnsubscribeResponse {
+                                        subscription_id: un_req.subscription_id,
+                                        success: true,
+                                    };
+                                    channel.send(&TnpPacket::new(
+                                        TnpMessageType::UnsubscribeResponse,
+                                        pkt.stream_id,
+                                        un_resp.encode(),
+                                    ))?;
+                                    break;
+                                }
+                                TnpMessageType::Ping => {
+                                    channel.send(&TnpPacket::new(
+                                        TnpMessageType::Pong,
+                                        pkt.stream_id,
+                                        vec![],
+                                    ))?;
+                                }
+                                _ => {}
+                            },
+                            Err(TnpError::TimedOut) => {
+                                thread::sleep(Duration::from_millis(5));
+                            }
+                            Err(TnpError::ConnectionClosed) => {
+                                self.hub.unregister(sub_id);
+                                return Ok(());
+                            }
+                            Err(e) => {
+                                self.hub.unregister(sub_id);
+                                return Err(e);
+                            }
+                        }
+                    }
+                }
+                TnpMessageType::UnsubscribeRequest => {
+                    let un_req = UnsubscribeRequest::decode(&req_packet.payload)?;
+                    let success = self.hub.unregister(un_req.subscription_id);
+                    let un_resp = UnsubscribeResponse {
+                        subscription_id: un_req.subscription_id,
+                        success,
+                    };
+                    channel.send(&TnpPacket::new(
+                        TnpMessageType::UnsubscribeResponse,
+                        req_packet.stream_id,
+                        un_resp.encode(),
                     ))?;
                 }
                 _ => {

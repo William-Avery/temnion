@@ -14,9 +14,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use temnion_protocol::{
-    HandshakeRequest, HandshakeResponse, TNP_VERSION, TnpChannel, TnpError, TnpMessageType,
-    TnpPacket,
+    HandshakeRequest, HandshakeResponse, SubscribeRequest, SubscribeResponse, TNP_VERSION,
+    TnpChannel, TnpError, TnpMessageType, TnpPacket, UnsubscribeRequest,
 };
+pub use temnion_protocol::{LiveEventRecord, QueryFormat};
 
 /// Default TNP port for Temnion database daemon.
 pub const DEFAULT_TNP_PORT: u16 = 9180;
@@ -303,7 +304,14 @@ impl ConnectionConfig {
 pub enum ConnectorError {
     Network(String),
     Protocol(TnpError),
-    HandshakeRejected { server_id: String, reason: String },
+    HandshakeRejected {
+        server_id: String,
+        reason: String,
+    },
+    SubscriptionRejected {
+        subscription_id: u64,
+        reason: String,
+    },
     AuthFailed(String),
     ServerTimeout,
 }
@@ -315,6 +323,15 @@ impl fmt::Display for ConnectorError {
             Self::Protocol(err) => write!(f, "Connector protocol error: {err}"),
             Self::HandshakeRejected { server_id, reason } => {
                 write!(f, "Connection rejected by server '{server_id}': {reason}")
+            }
+            Self::SubscriptionRejected {
+                subscription_id,
+                reason,
+            } => {
+                write!(
+                    f,
+                    "Subscription {subscription_id} rejected by server: {reason}"
+                )
             }
             Self::AuthFailed(msg) => write!(f, "Authentication failed: {msg}"),
             Self::ServerTimeout => write!(f, "Connection timed out"),
@@ -437,6 +454,196 @@ impl ActiveConnection {
     /// Reference to connection settings.
     pub fn config(&self) -> &ConnectionConfig {
         &self.config
+    }
+
+    /// Initiates a live subscription for the given query.
+    ///
+    /// Consumes the active connection and returns a `LiveSubscription` streaming handle.
+    /// The connection can be recovered by calling `sub.unsubscribe()`.
+    pub fn subscribe(
+        mut self,
+        query: impl Into<String>,
+        format: QueryFormat,
+        from_sequence: Option<u64>,
+        from_now: bool,
+    ) -> Result<LiveSubscription, ConnectorError> {
+        let req = SubscribeRequest {
+            format,
+            from_sequence,
+            from_now,
+            query_str: query.into(),
+        };
+        let packet = TnpPacket::new(TnpMessageType::SubscribeRequest, 3, req.encode());
+        self.channel
+            .send(&packet)
+            .map_err(ConnectorError::Protocol)?;
+
+        let resp_packet = self.channel.recv().map_err(ConnectorError::Protocol)?;
+        if resp_packet.message_type != TnpMessageType::SubscribeResponse {
+            return Err(ConnectorError::Protocol(TnpError::ProtocolViolation(
+                format!(
+                    "Expected SubscribeResponse, got {:?}",
+                    resp_packet.message_type
+                ),
+            )));
+        }
+
+        let resp =
+            SubscribeResponse::decode(&resp_packet.payload).map_err(ConnectorError::Protocol)?;
+        if !resp.success {
+            return Err(ConnectorError::SubscriptionRejected {
+                subscription_id: resp.subscription_id,
+                reason: resp.message,
+            });
+        }
+
+        Ok(LiveSubscription {
+            conn: Some(self),
+            subscription_id: resp.subscription_id,
+            snapshot_start: resp.snapshot_start,
+            snapshot_end: resp.snapshot_end,
+            unsubscribed: false,
+        })
+    }
+}
+
+/// An active streaming subscription handle over TNP.
+pub struct LiveSubscription {
+    conn: Option<ActiveConnection>,
+    subscription_id: u64,
+    snapshot_start: u64,
+    snapshot_end: u64,
+    unsubscribed: bool,
+}
+
+impl LiveSubscription {
+    /// Subscription identifier allocated by server.
+    pub fn subscription_id(&self) -> u64 {
+        self.subscription_id
+    }
+
+    /// Sequence range of historical snapshot events: (start_seq, end_seq).
+    pub fn snapshot_range(&self) -> (u64, u64) {
+        (self.snapshot_start, self.snapshot_end)
+    }
+
+    /// Whether the subscription has been terminated or closed.
+    pub fn is_unsubscribed(&self) -> bool {
+        self.unsubscribed
+    }
+
+    /// Reference to underlying active connection, if not yet detached.
+    pub fn connection(&self) -> Option<&ActiveConnection> {
+        self.conn.as_ref()
+    }
+
+    /// Blocks until the next event is received or the timeout expires.
+    ///
+    /// Returns `Ok(None)` if the read timed out without a new event, or if the stream ended.
+    pub fn next_event(
+        &mut self,
+        timeout: Option<Duration>,
+    ) -> Result<Option<LiveEventRecord>, ConnectorError> {
+        if self.unsubscribed {
+            return Ok(None);
+        }
+        let conn = self
+            .conn
+            .as_mut()
+            .ok_or_else(|| ConnectorError::Network("Connection already closed".to_string()))?;
+
+        conn.channel
+            .reader_mut()
+            .set_read_timeout(timeout)
+            .map_err(|e| ConnectorError::Network(e.to_string()))?;
+
+        loop {
+            match conn.channel.recv() {
+                Ok(packet) => match packet.message_type {
+                    TnpMessageType::LiveEvent => {
+                        let record = LiveEventRecord::decode(&packet.payload)
+                            .map_err(ConnectorError::Protocol)?;
+                        return Ok(Some(record));
+                    }
+                    TnpMessageType::Ping => {
+                        let pong =
+                            TnpPacket::new(TnpMessageType::Pong, packet.stream_id, packet.payload);
+                        let _ = conn.channel.send(&pong);
+                    }
+                    TnpMessageType::UnsubscribeResponse => {
+                        self.unsubscribed = true;
+                        return Ok(None);
+                    }
+                    TnpMessageType::ErrorResponse => {
+                        let msg = String::from_utf8_lossy(&packet.payload).to_string();
+                        return Err(ConnectorError::Protocol(TnpError::ExecutionError(msg)));
+                    }
+                    other => {
+                        return Err(ConnectorError::Protocol(TnpError::ProtocolViolation(
+                            format!("Unexpected message during subscription: {other:?}"),
+                        )));
+                    }
+                },
+                Err(TnpError::TimedOut) => {
+                    return Ok(None);
+                }
+                Err(TnpError::ConnectionClosed) => {
+                    self.unsubscribed = true;
+                    return Ok(None);
+                }
+                Err(e) => return Err(ConnectorError::Protocol(e)),
+            }
+        }
+    }
+
+    /// Unsubscribes cleanly from the server and restores the underlying `ActiveConnection`.
+    pub fn unsubscribe(mut self) -> Result<ActiveConnection, ConnectorError> {
+        let mut conn = self
+            .conn
+            .take()
+            .ok_or_else(|| ConnectorError::Network("Connection already closed".to_string()))?;
+
+        if !self.unsubscribed {
+            let req = UnsubscribeRequest {
+                subscription_id: self.subscription_id,
+            };
+            let pkt = TnpPacket::new(TnpMessageType::UnsubscribeRequest, 4, req.encode());
+            let _ = conn.channel.send(&pkt);
+
+            let _ = conn
+                .channel
+                .reader_mut()
+                .set_read_timeout(Some(Duration::from_secs(3)));
+
+            while let Ok(packet) = conn.channel.recv() {
+                if packet.message_type == TnpMessageType::UnsubscribeResponse {
+                    break;
+                }
+            }
+            self.unsubscribed = true;
+        }
+
+        let _ = conn
+            .channel
+            .reader_mut()
+            .set_read_timeout(Some(Duration::from_secs(10)));
+
+        Ok(conn)
+    }
+}
+
+impl Drop for LiveSubscription {
+    fn drop(&mut self) {
+        if !self.unsubscribed {
+            if let Some(mut conn) = self.conn.take() {
+                let req = UnsubscribeRequest {
+                    subscription_id: self.subscription_id,
+                };
+                let pkt = TnpPacket::new(TnpMessageType::UnsubscribeRequest, 4, req.encode());
+                let _ = conn.channel.send(&pkt);
+            }
+            self.unsubscribed = true;
+        }
     }
 }
 

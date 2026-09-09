@@ -46,11 +46,10 @@ reorder prerequisites to settle identity, time, recovery and integrity early.
   resource budgets (`QueryBudget`), physical operator planner, and human-readable `EXPLAIN`.
 - Human-readable TemQL, token-efficient compact Tem (`tn:`), and standard SQL relational parsers (`temnion-query`), with
   verified canonical lowering equivalence.
-- TNP framing/capability negotiation, local IPC, Arrow-compatible columns, safe C
-  handles, authenticated Arrow Flight, bounded MCP tools, and SQL compatibility (M18–M22).
+- TNP framing/capability negotiation, local IPC, live subscription streaming (`SubscribeRequest`, `SubscribeResponse`, `LiveEvent`, `UnsubscribeRequest`, `UnsubscribeResponse`) with filter pushdown and historical catchup, Arrow-compatible columns, safe C handles, authenticated Arrow Flight, bounded MCP tools, and SQL compatibility (M18–M22).
 - Temnion Studio desktop application using Tauri 2, Rust, React/TypeScript,
   TanStack Query and TanStack Table for local database open/create, query,
-  EXPLAIN, history, append, branch inspection, causal tracing, and dedicated Tzeentch Explorer panel (M23, M41).
+  real-time live subscription streaming ticker, EXPLAIN, history, append, branch inspection, causal tracing, and dedicated Tzeentch Explorer panel (M23, M41).
 - Epistemic Knowledge Store (`temnion-eks`) with knowledge primitives (`Observation`,
   `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance,
   cascading non-destructive retraction, `WHY` provenance traversal, predictive

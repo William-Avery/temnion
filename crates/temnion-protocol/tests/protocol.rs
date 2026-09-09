@@ -7,16 +7,18 @@ use std::io::{self, Read, Write};
 use std::path::PathBuf;
 use std::sync::{Arc, Condvar, Mutex};
 use std::thread;
+use std::time::Duration;
 
 use temnion_core::{
     ClockId, EntityId, EventTimes, SchemaId, ShardId, SourceEpoch, SourceId, Timestamp,
 };
 use temnion_format::Limits;
 use temnion_protocol::{
-    ColumnarBatch, HandshakeRequest, HandshakeResponse, QueryFormat, QueryRequest,
-    TEMNION_ERR_INVALID_ARGUMENT, TEMNION_ERR_NOT_FOUND, TEMNION_SUCCESS, TNP_VERSION, TnpChannel,
-    TnpError, TnpMessageType, TnpPacket, TnpServer, temnion_c_query_execute, temnion_c_result_free,
-    temnion_c_result_row_count, temnion_c_store_close, temnion_c_store_open,
+    ColumnarBatch, HandshakeRequest, HandshakeResponse, LiveEventRecord, QueryFormat, QueryRequest,
+    SubscribeRequest, SubscribeResponse, SubscriptionHub, TEMNION_ERR_INVALID_ARGUMENT,
+    TEMNION_ERR_NOT_FOUND, TEMNION_SUCCESS, TNP_VERSION, TnpChannel, TnpError, TnpMessageType,
+    TnpPacket, TnpServer, UnsubscribeRequest, UnsubscribeResponse, temnion_c_query_execute,
+    temnion_c_result_free, temnion_c_result_row_count, temnion_c_store_close, temnion_c_store_open,
 };
 use temnion_query::QueryRow;
 use temnion_storage::{Store, WriteEvent};
@@ -83,7 +85,17 @@ impl Read for PipeBuffer {
             if *self.closed.lock().unwrap() {
                 return Ok(0);
             }
-            queue = self.notify.wait(queue).unwrap();
+            let (q, timeout_result) = self
+                .notify
+                .wait_timeout(queue, Duration::from_millis(20))
+                .unwrap();
+            queue = q;
+            if timeout_result.timed_out() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "Pipe read timed out",
+                ));
+            }
         }
     }
 }
@@ -248,7 +260,7 @@ fn local_ipc_channel_and_server_streaming_workflow() {
     let mut client_channel = TnpChannel::new(s2c.clone(), c2s.clone());
     let mut server_channel = TnpChannel::new(c2s.clone(), s2c);
 
-    let mut server = TnpServer::new(store, "temnion-ipc-node");
+    let server = TnpServer::new(store, "temnion-ipc-node");
 
     // Run server in background thread
     let server_handle = thread::spawn(move || server.handle_connection(&mut server_channel));
@@ -467,4 +479,347 @@ fn c_abi_store_and_query_flow() {
     // Close store
     assert_eq!(temnion_c_store_close(store_handle), TEMNION_SUCCESS);
     assert_eq!(temnion_c_store_close(store_handle), TEMNION_ERR_NOT_FOUND);
+}
+
+#[test]
+fn test_subscription_messages_encoding_and_decoding() {
+    let req = SubscribeRequest {
+        format: QueryFormat::Sql,
+        from_sequence: Some(42),
+        from_now: false,
+        query_str: "SELECT * FROM temnion WHERE schema = 1".to_string(),
+    };
+    let encoded = req.encode();
+    let decoded = SubscribeRequest::decode(&encoded).unwrap();
+    assert_eq!(decoded.format, QueryFormat::Sql);
+    assert_eq!(decoded.from_sequence, Some(42));
+    assert!(!decoded.from_now);
+    assert_eq!(decoded.query_str, "SELECT * FROM temnion WHERE schema = 1");
+
+    let resp = SubscribeResponse {
+        subscription_id: 101,
+        success: true,
+        snapshot_start: 10,
+        snapshot_end: 42,
+        message: "Subscribed".to_string(),
+    };
+    let resp_bytes = resp.encode();
+    let resp_decoded = SubscribeResponse::decode(&resp_bytes).unwrap();
+    assert_eq!(resp_decoded.subscription_id, 101);
+    assert!(resp_decoded.success);
+    assert_eq!(resp_decoded.snapshot_start, 10);
+    assert_eq!(resp_decoded.snapshot_end, 42);
+
+    let event = LiveEventRecord {
+        subscription_id: 101,
+        sequence: 43,
+        is_live: true,
+        entity_shard: 1,
+        entity_slot: 2,
+        entity_generation: 3,
+        schema: 7,
+        valid_clock: 1,
+        valid_time: 100,
+        known_clock: 1,
+        known_time: 102,
+        payload_hex: "010203".to_string(),
+    };
+    let event_bytes = event.encode();
+    let event_decoded = LiveEventRecord::decode(&event_bytes).unwrap();
+    assert_eq!(event_decoded.sequence, 43);
+    assert!(event_decoded.is_live);
+    assert_eq!(event_decoded.entity_shard, 1);
+    assert_eq!(event_decoded.payload_hex, "010203");
+
+    let un_req = UnsubscribeRequest {
+        subscription_id: 101,
+    };
+    let un_decoded = UnsubscribeRequest::decode(&un_req.encode()).unwrap();
+    assert_eq!(un_decoded.subscription_id, 101);
+
+    let un_resp = UnsubscribeResponse {
+        subscription_id: 101,
+        success: true,
+    };
+    let un_resp_decoded = UnsubscribeResponse::decode(&un_resp.encode()).unwrap();
+    assert_eq!(un_resp_decoded.subscription_id, 101);
+    assert!(un_resp_decoded.success);
+}
+
+#[test]
+fn test_subscription_hub_filtering_and_dispatch() {
+    use temnion_query::parse_sql;
+    let hub = SubscriptionHub::new();
+
+    // Parse filter: schema = 1
+    let logical = parse_sql("SELECT * FROM temnion WHERE schema = 1").unwrap();
+    let physical = temnion_query::plan_query(&logical);
+    let filter = match &physical {
+        temnion_query::PhysicalPlan::StorageScan {
+            pushdown_filter, ..
+        } => pushdown_filter.clone(),
+        _ => None,
+    };
+
+    let (sub_id, rx) = hub.register(filter);
+    assert_eq!(sub_id, 1);
+
+    // Create 2 events: one with schema 1, one with schema 2
+    let event1 = temnion_format::StoredEvent {
+        id: temnion_core::EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 10,
+        },
+        entity: EntityId {
+            shard: ShardId(0),
+            slot: 1,
+            generation: 0,
+        },
+        times: EventTimes {
+            valid: Timestamp::new(ClockId(1), 100),
+            observed: None,
+            known: Timestamp::new(ClockId(1), 105),
+        },
+        schema: SchemaId(1),
+        payload: vec![0xaa, 0xbb],
+        causes: vec![],
+    };
+
+    let event2 = temnion_format::StoredEvent {
+        id: temnion_core::EventId {
+            source: SourceId(1),
+            epoch: SourceEpoch(1),
+            sequence: 11,
+        },
+        entity: EntityId {
+            shard: ShardId(0),
+            slot: 2,
+            generation: 0,
+        },
+        times: EventTimes {
+            valid: Timestamp::new(ClockId(1), 110),
+            observed: None,
+            known: Timestamp::new(ClockId(1), 115),
+        },
+        schema: SchemaId(2),
+        payload: vec![0xcc],
+        causes: vec![],
+    };
+
+    hub.dispatch_events(&[event1, event2]);
+
+    // Subscriber should have received only event1 (schema = 1)
+    let received = rx.try_recv().expect("Should receive event1");
+    assert_eq!(received.sequence, 10);
+    assert_eq!(received.schema, 1);
+    assert!(received.is_live);
+
+    // And nothing else
+    assert!(rx.try_recv().is_err());
+
+    // Unregister
+    assert!(hub.unregister(sub_id));
+    assert!(!hub.unregister(sub_id));
+}
+
+fn recv_with_timeout<R: Read, W: Write>(
+    channel: &mut TnpChannel<R, W>,
+    timeout: Duration,
+) -> Result<TnpPacket, TnpError> {
+    let start = std::time::Instant::now();
+    loop {
+        match channel.recv() {
+            Ok(pkt) => return Ok(pkt),
+            Err(TnpError::TimedOut) => {
+                if start.elapsed() >= timeout {
+                    return Err(TnpError::TimedOut);
+                }
+                thread::sleep(Duration::from_millis(5));
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+#[test]
+fn test_live_subscription_streaming_over_ipc() {
+    let dir = TempDir::new("ipc-sub");
+    let mut store =
+        Store::create(&dir.path, SourceId(1), SourceEpoch(1), Limits::default()).unwrap();
+
+    // Append 2 initial events with schema 1
+    store
+        .append(vec![
+            WriteEvent {
+                entity: EntityId {
+                    shard: ShardId(0),
+                    slot: 1,
+                    generation: 0,
+                },
+                times: EventTimes {
+                    valid: Timestamp::new(ClockId(1), 10),
+                    observed: None,
+                    known: Timestamp::new(ClockId(1), 12),
+                },
+                schema: SchemaId(1),
+                payload: vec![1, 2],
+                causes: vec![],
+            },
+            WriteEvent {
+                entity: EntityId {
+                    shard: ShardId(0),
+                    slot: 1,
+                    generation: 0,
+                },
+                times: EventTimes {
+                    valid: Timestamp::new(ClockId(1), 20),
+                    observed: None,
+                    known: Timestamp::new(ClockId(1), 22),
+                },
+                schema: SchemaId(1),
+                payload: vec![3, 4],
+                causes: vec![],
+            },
+        ])
+        .unwrap();
+
+    let (c2s, s2c) = (PipeBuffer::new(), PipeBuffer::new());
+    let mut client_channel = TnpChannel::new(s2c.clone(), c2s.clone());
+    let mut server_channel = TnpChannel::new(c2s.clone(), s2c);
+
+    let server = Arc::new(TnpServer::new(store, "temnion-sub-node"));
+    let server_clone = Arc::clone(&server);
+
+    let server_handle = thread::spawn(move || server_clone.handle_connection(&mut server_channel));
+
+    // 1. Handshake
+    let hs_req = HandshakeRequest {
+        client_version: TNP_VERSION,
+        client_id: "sub-client".to_string(),
+        capability_flags: 0x0F,
+    };
+    client_channel
+        .send(&TnpPacket::new(
+            TnpMessageType::HandshakeRequest,
+            1,
+            hs_req.encode(),
+        ))
+        .unwrap();
+
+    let hs_resp_pkt = recv_with_timeout(&mut client_channel, Duration::from_secs(3)).unwrap();
+    assert_eq!(hs_resp_pkt.message_type, TnpMessageType::HandshakeResponse);
+    let hs_resp = HandshakeResponse::decode(&hs_resp_pkt.payload).unwrap();
+    assert!(hs_resp.success);
+    assert_eq!(hs_resp.capability_flags & 0x08, 0x08); // Subscribe capability flag advertised
+
+    // 2. Subscribe request from sequence 0: filter schema = 1
+    let sub_req = SubscribeRequest {
+        format: QueryFormat::Sql,
+        from_sequence: Some(0),
+        from_now: false,
+        query_str: "SELECT * FROM temnion WHERE schema = 1".to_string(),
+    };
+    client_channel
+        .send(&TnpPacket::new(
+            TnpMessageType::SubscribeRequest,
+            2,
+            sub_req.encode(),
+        ))
+        .unwrap();
+
+    let sub_resp_pkt = recv_with_timeout(&mut client_channel, Duration::from_secs(3)).unwrap();
+    assert_eq!(sub_resp_pkt.message_type, TnpMessageType::SubscribeResponse);
+    let sub_resp = SubscribeResponse::decode(&sub_resp_pkt.payload).unwrap();
+    assert!(sub_resp.success);
+    assert_eq!(sub_resp.snapshot_start, 0);
+    assert_eq!(sub_resp.snapshot_end, 2);
+
+    // 3. Receive 2 historical snapshot events (is_live = false)
+    let hist_1 = recv_with_timeout(&mut client_channel, Duration::from_secs(3)).unwrap();
+    assert_eq!(hist_1.message_type, TnpMessageType::LiveEvent);
+    let h1_rec = LiveEventRecord::decode(&hist_1.payload).unwrap();
+    assert_eq!(h1_rec.sequence, 0);
+    assert!(!h1_rec.is_live);
+    assert_eq!(h1_rec.schema, 1);
+
+    let hist_2 = recv_with_timeout(&mut client_channel, Duration::from_secs(3)).unwrap();
+    assert_eq!(hist_2.message_type, TnpMessageType::LiveEvent);
+    let h2_rec = LiveEventRecord::decode(&hist_2.payload).unwrap();
+    assert_eq!(h2_rec.sequence, 1);
+    assert!(!h2_rec.is_live);
+    assert_eq!(h2_rec.schema, 1);
+
+    // 4. Concurrently append a matching event (schema 1) and non-matching event (schema 2) to store
+    {
+        let mut store_guard = server.store().lock().unwrap();
+        store_guard
+            .append(vec![
+                WriteEvent {
+                    entity: EntityId {
+                        shard: ShardId(0),
+                        slot: 2,
+                        generation: 0,
+                    },
+                    times: EventTimes {
+                        valid: Timestamp::new(ClockId(1), 30),
+                        observed: None,
+                        known: Timestamp::new(ClockId(1), 32),
+                    },
+                    schema: SchemaId(1),
+                    payload: vec![5, 6],
+                    causes: vec![],
+                },
+                WriteEvent {
+                    entity: EntityId {
+                        shard: ShardId(0),
+                        slot: 3,
+                        generation: 0,
+                    },
+                    times: EventTimes {
+                        valid: Timestamp::new(ClockId(1), 40),
+                        observed: None,
+                        known: Timestamp::new(ClockId(1), 42),
+                    },
+                    schema: SchemaId(2),
+                    payload: vec![7, 8],
+                    causes: vec![],
+                },
+            ])
+            .unwrap();
+    }
+
+    // 5. Client receives newly committed live event (is_live = true, schema = 1, sequence = 2)
+    let live_pkt = recv_with_timeout(&mut client_channel, Duration::from_secs(3)).unwrap();
+    assert_eq!(live_pkt.message_type, TnpMessageType::LiveEvent);
+    let live_rec = LiveEventRecord::decode(&live_pkt.payload).unwrap();
+    assert_eq!(live_rec.sequence, 2);
+    assert!(live_rec.is_live);
+    assert_eq!(live_rec.schema, 1);
+    assert_eq!(live_rec.payload_hex, "0506");
+
+    // 6. Unsubscribe
+    let un_req = UnsubscribeRequest {
+        subscription_id: sub_resp.subscription_id,
+    };
+    client_channel
+        .send(&TnpPacket::new(
+            TnpMessageType::UnsubscribeRequest,
+            3,
+            un_req.encode(),
+        ))
+        .unwrap();
+
+    let un_resp_pkt = recv_with_timeout(&mut client_channel, Duration::from_secs(3)).unwrap();
+    assert_eq!(
+        un_resp_pkt.message_type,
+        TnpMessageType::UnsubscribeResponse
+    );
+    let un_resp = UnsubscribeResponse::decode(&un_resp_pkt.payload).unwrap();
+    assert!(un_resp.success);
+    assert_eq!(un_resp.subscription_id, sub_resp.subscription_id);
+
+    // Close pipe to let server finish cleanly
+    c2s.close();
+    server_handle.join().unwrap().unwrap();
 }

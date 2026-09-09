@@ -67,16 +67,16 @@ Tzeentch is an integrated first consumer, fully decoupled from the deterministic
 | `temnion-causal` | First-class causal graph (TNCG), CSR-packed flat indexing, bidirectional immediate queries, transitive causal/effect cone tracing, topological sort, and cycle detection |
 | `temnion-runtime` | Single-writer virtual shards, routing policies, deterministic total-order merge, priority-weighted background task DAG with Kahn cycle prevention and pressure throttling, and three-tier storage hierarchy with LRU eviction and auto-promotion |
 | `temnion-query` | Canonical typed query IR (LogicalPlan, Expr), physical planning with predicate pushdown (PhysicalPlan), EXPLAIN formatting, reference executor with resource budgets, and equivalent human TemQL and AI-compact tn: shorthand parsers |
-| `temnion-protocol` | Framed binary protocol (TNP), handshake negotiation, streaming query results, duplex pipe/socket IPC (TnpChannel, TnpServer), Arrow columnar layout (ColumnarBatch), and panic-safe C ABI (temnion_c_*) |
+| `temnion-protocol` | Framed binary protocol (TNP), capability negotiation, live predicate subscription streaming (`SubscribeRequest`, `SubscribeResponse`, `LiveEvent`, `UnsubscribeRequest`, `UnsubscribeResponse`) with historical snapshot catchup, streaming query results, duplex pipe/socket IPC (`TnpChannel`, `TnpServer`, `SubscriptionHub`), Arrow columnar layout (`ColumnarBatch`), and panic-safe C ABI (`temnion_c_*`) |
 | `temnion-flight` | Authenticated Arrow Flight remote analytical transport (`FlightDescriptor`, `Ticket`, `FlightInfo`, `FlightData` streaming columnar batches, `FlightService`) |
 | `temnion-mcp` | Model Context Protocol (MCP) JSON-RPC 2.0 control-plane server exposing query, explain, inspect, branch, causal, why_trace, and rewrite_expr tools, resources, and prompt templates |
 | `temnion-eks` | Epistemic Knowledge Store (EKS) with versioned primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`, `ModelManifest`, `Skill`), truth maintenance with non-destructive cascading retraction, `WHY` provenance traversal, predictive ledger with Brier score calibration, and tiered consolidation (`Active`, `Reference`, `Archive`) |
 | `temnion-transform` | Deterministic transformation engine with versioned manifests, typed signatures, CPU/memory resource metering, immutable lineage logs, and canonical query IR e-graph optimizer with equality saturation, constant folding, and cycle-safe plan extraction |
 | `temnion-evolution` | Isolated measured evolution engine (`EvolutionEngine`, `ChampionChallengerRegistry`), adaptive physical memory and lifecycle evaluators, semantic/vector projection index (`SemanticProjectionIndex`), gated meta-evolution (`MutationPolicy`), and runtime immutable Constitution hardening (`Constitution`, 8 axioms, `ConstitutionAudit`) |
-| `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), causal action tracer (`TzeentchActionTracer`), standardized database network connector (`ConnectionConfig`, `ActiveConnection`), and standalone `tzeentch` client binary |
-| `temniond` | Standalone background service daemon hosting TNP (`:9180`), Arrow Flight (`:9181`), and MCP endpoints with TOML configuration (`DaemonConfig`), database superuser credentials, periodic maintenance thread, Linux systemd unit, and Windows Service automation scripts |
-| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `mcp`, `why-demo`, `rewrite-demo`, `evolve`, `tzeentch`, and `benchmark scale` commands |
-| `temnion-studio` | Tauri 2 + React/TypeScript desktop client and interactive Web Workbench (MySQL Workbench / pgAdmin style) featuring Query Studio, Temporal Plane, Branches & Causality, Ingestion Console, Schema & Entity Catalog, Connections Manager, and Storage & Capabilities |
+| `temnion-adapter` | Model-agnostic consumer adapter, NIST FIPS 180-4 SHA-256 media references (`MediaRef`), action/intention separation, bounded dual-write mirror queue (`MirrorWriter`), multi-timescale scheduler (Fast 120Hz, Medium 20Hz, Slow 1Hz, Background 0.1Hz), causal action tracer (`TzeentchActionTracer`), standardized database network connector (`ConnectionConfig`, `ActiveConnection` with `LiveSubscription` streaming), and standalone `tzeentch` client binary |
+| `temniond` | Standalone background service daemon hosting TNP (`:9180`), Arrow Flight (`:9181`), and MCP endpoints with TOML configuration (`DaemonConfig`), database superuser credentials, live subscription streaming engine, periodic maintenance thread, Linux systemd unit, and Windows Service automation scripts |
+| `temnion-cli` | Volatile demo plus durable `init`, `append`, `history`, `inspect`, `recover`, `seal`, `verify-segment`, `inspect-summary`, `checkpoint`, `reconstruct`, `evaluate-codecs`, `branch-create`, `branch-list`, `causal-trace`, `query`, `explain`, `subscribe`, `mcp`, `why-demo`, `rewrite-demo`, `evolve`, `tzeentch`, and `benchmark scale` commands |
+| `temnion-studio` | Tauri 2 + React/TypeScript desktop client and interactive Web Workbench (MySQL Workbench / pgAdmin style) featuring Query Studio with real-time Live Subscription Streaming (CDC), Temporal Plane, Branches & Causality, Ingestion Console, Schema & Entity Catalog, Connections Manager, and Storage & Capabilities |
 | `temnion-bench` | In-memory baselines, durable on-disk batch workloads, multi-cadence scale harness (4K, 64K, 1M+ active records), and retention lifecycle stress harness |
 
 Disk history uses a source-local WAL batch-offset index, hierarchical block summaries
@@ -85,7 +85,7 @@ Startup scans the authoritative WAL.
 Exports retain or retire that WAL into sealed immutable segments with manifest verification. Typed schemas are library APIs; the low-level
 CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
-**All core roadmap milestones completed:** core engine, storage tiers, EKS, transformations, evolution, decoupled Tzeentch integration & connector, standalone daemon (`temniond`), manifest-based WAL retirement, Studio Workbench IDE, and PostgreSQL-style component installer.
+**All core roadmap milestones completed:** core engine, storage tiers, EKS, transformations, evolution, decoupled Tzeentch integration & connector, standalone daemon (`temniond`), manifest-based WAL retirement, live subscription streaming (CDC), Studio Workbench IDE, and PostgreSQL-style component installer.
 
 ## System Architecture & Detailed Feature Tour
 
@@ -101,32 +101,32 @@ CLI records a schema ID with opaque bytes, without a persistent schema registry.
 
 ---
 
-### 3. Temporal Query Engine & E-Graph Canonical IR (`temnion-query`, `temnion-transform`)
-![Temnion Temporal Query Engine Dashboard](docs/assets/temnion_query_futuristic_data_dashboard.png)
-*Unified query evaluation supporting standard SQL (`AS OF SYSTEM_TIME`, `BETWEEN PHYSICAL`), native TemQL, and AI-compact `tn:` pipelines lowering into typed IR optimized via equality saturation e-graphs.*
+### 3. Knowledge Layer & Truth Maintenance (`temnion-eks`)
+![Temnion EKS Knowledge Layer](docs/assets/temnion_eks_knowledge_layer.png)
+*Epistemic Knowledge Store (EKS) with non-destructive cascading retraction, forward predictive calibration (Brier scores), and three-tier consolidation.*
 
 ---
 
-### 4. Epistemic Knowledge Store (EKS) & Agent Memory (`temnion-eks`)
-![Temnion Agent Memory Dashboard](docs/assets/temnion_agent_memory_dashboard.png)
-*Durable cognitive primitives (`Observation`, `Claim`, `Belief`, `Concept`, `Rule`), non-destructive cascading retraction, `WHY` provenance traversal, and Brier score predictive calibration across active, reference, and archive tiers.*
+### 4. Deterministic Transformations & E-Graph Optimization (`temnion-transform`)
+![Temnion Transformation Engine](docs/assets/temnion_transformation_engine.png)
+*Deterministic e-graph query plan optimizer with equality saturation, constant folding, and rule-based cost reduction under strict CPU/memory metering.*
 
 ---
 
-### 5. Unified Multi-Protocol Interfaces (`temnion-protocol`, `temnion-flight`, `temnion-mcp`)
-![Temnion Interfaces & Unified Intelligence](docs/assets/temnion_interfaces_unified_temporal_intelligence.png)
-*High-performance binary Temnion Network Protocol (TNP: 9180), Arrow Flight SQL analytical bulk transport (9181), Model Context Protocol (MCP) JSON-RPC 2.0 control plane, and panic-safe C ABI bindings.*
+### 5. Multi-Interface Ingestion & Analytical Transport (`temnion-protocol`, `temnion-flight`, `temnion-mcp`)
+![Temnion Ingestion Architecture](docs/assets/temnion_ingestion_architecture.png)
+*Native TNP wire protocol with live streaming subscriptions, authenticated Arrow Flight columnar analytics, safe C ABI, and MCP JSON-RPC control plane.*
 
 ---
 
-### 6. Temnion Studio Workbench IDE (`apps/temnion-studio`)
-![Temnion Studio Neon Temporal Data Dashboard](docs/assets/temnion_studio_neon_temporal_data_dashboard.png)
-*Modern database administration IDE (MySQL Workbench & pgAdmin equivalent) featuring Query Studio, Schema & Entity Catalog, interactive multi-clock timeline scrubber, branch DAG visualizer, and Connections Manager.*
+### 6. Decoupled Consumer Integration & Multi-Timescale Scheduling (`temnion-adapter`)
+![Temnion Consumer Integration](docs/assets/temnion_consumer_integration.png)
+*Decoupled consumer architecture featuring action/intention separation, dual-write mirror buffers with zero silent drops, and 4-tier cadence scheduling.*
 
 ---
 
-### 7. Isolated Measured Evolution & Safety Constitution (`temnion-evolution`)
-![Temnion Evolution Dashboard Infographic](docs/assets/temnion_evolution_dashboard_infographic.png)
+### 7. Safe Evolution Engine & Immutable Constitution (`temnion-evolution`)
+![Temnion Evolution Safety](docs/assets/temnion_evolution_safety.png)
 *Self-improving runtime with Champion/Challenger evaluation, adaptive physical memory scoring, and an immutable 8-axiom Constitution verified at runtime under `#![forbid(unsafe_code)]`.*
 
 ---
@@ -134,6 +134,11 @@ CLI records a schema ID with opaque bytes, without a persistent schema registry.
 ### 8. Operational Daemon, Durability & Production Defaults (`apps/temniond`, `temnion-storage`)
 ![Temnion Operational Defaults Dashboard](docs/assets/temnion_operational_defaults_dashboard.png)
 *Always-on background server daemon (`temniond`), automated Windows Service and Linux systemd units, SegmentManifest (`manifest.bin`), ReferenceHold-protected WAL retirement compaction, and CRC32 point-in-time backups.*
+
+---
+
+### 9. Live Predicate Subscription Streaming & Real-Time CDC (`temnion-protocol`, `temnion-adapter`, `temniond`, Studio)
+*Continuous change-data-capture streaming over TNP with predicate pushdown and historical snapshot catchup adhering to Architecture §7. Delivers real-time committed events via `tem subscribe [OPTIONS] <QUERY>`, client SDK `ActiveConnection::subscribe(...)`, and interactive live monitoring in Temnion Studio.*
 
 ---
 

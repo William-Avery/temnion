@@ -339,6 +339,20 @@ tem branch create --from main --name "speculative_sim_alpha"
 tem query --branch "speculative_sim_alpha" --sql "SELECT * FROM sensor_telemetry"
 ```
 
+### Live Subscription Streaming
+Temnion supports continuous real-time streaming subscriptions over TNP with predicate pushdown and historical catchup:
+
+```bash
+# Subscribe to real-time events on local daemon
+tem subscribe "SELECT * FROM events"
+
+# Subscribe with SQL predicate filter pushdown and historical replay from sequence 0
+tem subscribe --from 0 "SELECT * FROM events WHERE schema = 1"
+
+# Connect to remote instance and stream events arriving from now on
+tem subscribe --uri temnion://admin:token@db.internal:9180/production --from-now "WHERE schema = 101"
+```
+
 ---
 
 ## 6. Temnion Studio Workbench IDE Guide
@@ -375,6 +389,7 @@ Temnion Studio is the official database administration and query explorer interf
 #### 2. ⚡ Query Studio
 - Multi-syntax support: **SQL**, **TemQL**, and **Compact (`tn:`)**.
 - Interactive query execution with bounded result streaming.
+- **Live Subscription Streaming**: Real-time ticker mode (`⚡ Live Stream`) with predicate pushdown, live pulsing green indicator, Pause/Resume, and Auto-scroll.
 - Query plan analysis with the **Explain** button (displays cost, scan pruning, and E-Graph rewrite passes).
 - Exportable and bookmarkable query history.
 
@@ -449,7 +464,158 @@ from sensor_telemetry
 
 ---
 
-## 8. Standalone Cognitive Client (`tzeentch`)
+## 8. Live Predicate Subscriptions & Real-Time Streaming (CDC)
+
+Temnion provides first-class, push-based Change Data Capture (CDC) and predicate subscriptions conforming to Architecture §7:
+> *"Predicate subscriptions share the IR and specify snapshot-to-live handoff, delivery/resume order, disconnect recovery, overflow, cancellation and reference holds."*
+
+```
+   ┌────────────────────────────────────────────────────────┐
+   │             Temnion Studio IDE / CLI / SDK             │
+   │  (tem subscribe / Live Stream Tab / LiveSubscription)  │
+   └───────────────────────────┬────────────────────────────┘
+                               │ TNP Frames (0x000C..0x0010)
+                               ▼
+   ┌────────────────────────────────────────────────────────┐
+   │            TNP Server & Daemon (temniond)              │
+   │  - Non-blocking push loop on socket / IPC pipe         │
+   │  - SubscriptionHub with bounded sync channels          │
+   └───────────────┬────────────────────────┬───────────────┘
+                   │                        │
+       Snapshot Catchup Scan         Live Commit Notification
+                   │                        │
+                   ▼                        ▼
+   ┌───────────────────────────┐ ┌──────────────────────────┐
+   │       temnion-query       │ │     temnion-storage      │
+   │ - QueryExecutor           │ │ - Store::append()        │
+   │ - match_and_project_event │ │ - CommitSubscriber       │
+   │ - Predicate Pushdown      │ │ - Synchronous WAL sync   │
+   └───────────────────────────┘ └──────────────────────────┘
+```
+
+### Core Architecture & Delivery Guarantees
+
+1. **Shared Canonical IR & Predicate Pushdown**:
+   Subscriptions accept queries in SQL, TemQL, or Compact Tem (`tn:`). The planner lowers the query into a `PhysicalPlan` pushdown filter (`Option<Expr>`). When new WAL batches commit, each event is evaluated via zero-copy field matching (`QueryExecutor::match_and_project_event`) without full table scans or heap allocations.
+
+2. **Atomic Snapshot-to-Live Handoff**:
+   - When subscribing with `--from <SEQ>`, the engine first replays matching historical events (`is_live = false`) from the database up to the snapshot watermark.
+   - Upon completing the snapshot replay, it transitions seamlessly to newly committed live events (`is_live = true`).
+   - Guarantees strict monotonic sequence ordering with zero sequence gaps, duplicates, or future leakage.
+   - Subscribing with `--from-now` starts streaming immediately from newly committed events.
+
+3. **Synchronous WAL Commit Notification**:
+   `Store::append()` invokes registered `CommitSubscriber` callbacks immediately upon `sync_all()` durable flush. Uncommitted or in-flight writes are never broadcast to subscribers.
+
+4. **Bounded Buffering & Zero Silent Drops**:
+   Each active subscriber has a dedicated bounded synchronous channel (`mpsc::sync_channel(1024)`). If a slow consumer cannot keep up, backpressure is applied rather than silently discarding critical data frames.
+
+---
+
+### CLI Command Reference: `tem subscribe`
+
+Stream matching events live in your terminal with colored badges:
+
+```bash
+# Stream all events committed to the local daemon
+tem subscribe "SELECT * FROM events"
+
+# Replay historical events from sequence 0 and transition to live streaming
+tem subscribe --from 0 "SELECT * FROM events WHERE schema = 1"
+
+# Connect to a remote production daemon and stream events starting now
+tem subscribe --connect "temnion://admin:secret@db.internal:9180" --from-now "WHERE schema = 42"
+
+# Stream using native TemQL syntax
+tem subscribe --temql "FROM events WHERE entity == #0:1:0"
+
+# Stop automatically after receiving 50 matching events
+tem subscribe --max 50 "SELECT * FROM sensor_telemetry"
+```
+
+#### CLI Options
+
+| Flag / Option | Description |
+| --- | --- |
+| `<QUERY>` | SQL or TemQL predicate expression |
+| `--from <SEQ>` | Replay historical snapshot starting from sequence number `SEQ` before live streaming |
+| `--from-now` | Skip historical snapshot and only stream newly committed events |
+| `--sql` | Parse `<QUERY>` as SQL (default) |
+| `--temql` | Parse `<QUERY>` as TemQL |
+| `--max <N>` | Automatically terminate after receiving `N` matching events |
+| `--connect <URI>` | Remote daemon TNP endpoint (e.g. `temnion://127.0.0.1:9180`) |
+| `--store <PATH>` | Local database directory for direct in-process streaming |
+
+---
+
+### Rust Client Connector API
+
+Applications integrate with Temnion live subscriptions using `temnion-adapter`:
+
+```rust
+use temnion_adapter::{ActiveConnection, ConnectionConfig, QueryFormat};
+
+fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // 1. Establish connection to Temnion daemon
+    let config = ConnectionConfig {
+        endpoint: "127.0.0.1:9180".to_string(),
+        client_id: "telemetry-worker-1".to_string(),
+        ..Default::default()
+    };
+    let mut conn = ActiveConnection::connect(&config)?;
+
+    // 2. Open predicate subscription
+    let mut sub = conn.subscribe(
+        "SELECT * FROM sensor_telemetry WHERE schema = 1",
+        QueryFormat::Sql,
+        Some(0), // Replay from start of history
+        false,   // from_now = false
+    )?;
+
+    println!("Subscription active (ID: {})", sub.subscription_id());
+
+    // 3. Process events as they commit
+    while let Ok(event) = sub.next_event() {
+        let mode = if event.is_live { "LIVE" } else { "SNAPSHOT" };
+        println!(
+            "[{mode}] seq={} shard={} slot={} schema={} payload_hex={}",
+            event.sequence,
+            event.entity_shard,
+            event.entity_slot,
+            event.schema,
+            event.payload_hex
+        );
+    }
+
+    // Auto-unsubscribes cleanly on Drop, or call sub.unsubscribe()? explicitly
+    Ok(())
+}
+```
+
+---
+
+### Temnion Studio IDE Live Streaming Ticker
+
+In the Temnion Studio desktop IDE, live streaming is integrated directly into **⚡ Query Studio**:
+
+1. **Activate Live Stream Mode**:
+   - In Query Studio, click the **📡 Live Stream (CDC)** tab.
+   - Or click the **📡 Live Stream** quick-action button in the Navicat ribbon toolbar.
+2. **Configure Predicate**:
+   - Enter your SQL or TemQL query filter (e.g., `SELECT * FROM events WHERE schema = 1`).
+   - Check or uncheck **Replay from start** to toggle historical catchup.
+3. **Real-time Monitoring**:
+   - **`● LIVE STREAMING` status chip**: Pulses vibrant green when connected.
+   - **Real-time Ticker**: Displays newly committed events in sub-50ms latency.
+   - **Controls**:
+     - **Start Stream / Stop (Unsubscribe)**: Connect or disconnect stream cleanly.
+     - **Pause / Resume**: Freeze table display for inspection without dropping incoming events.
+     - **Auto-Scroll**: Automatically scroll to the latest committed events.
+     - **Clear**: Reset the event table buffer.
+
+---
+
+## 9. Standalone Cognitive Client (`tzeentch`)
 
 `tzeentch` is an autonomous cognitive consumer client that lives completely separate from the core database and Temnion Studio. It consumes temporal event streams, performs real-time cadence tracking, and emits speculative decision events over TNP.
 
@@ -488,7 +654,7 @@ tzeentch trace 42
 
 ---
 
-## 9. Durability, Storage & Production Maintenance
+## 10. Durability, Storage & Production Maintenance
 
 Temnion guarantees durability and high-throughput write performance via a tiered architecture.
 
@@ -541,7 +707,7 @@ tem backup restore --src /var/backups/temnion/snapshot_001 --dest /var/lib/temni
 
 ---
 
-## Summary & Next Steps
+## 11. Summary & Next Steps
 
 You now have a complete, production-grade understanding of Temnion.
 - To explore queries immediately, open **Temnion Studio** and navigate to **⚡ Query Studio**.

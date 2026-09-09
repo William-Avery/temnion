@@ -83,3 +83,80 @@ Footer (`TNFT`, 16 bytes, immediately after the embedded batch):
 Readers require exact one-object decoding: trailing bytes, count mismatches,
 checksum corruption, unsupported versions, and record/header identity mismatch
 are explicit errors. Incomplete is reserved for genuinely truncated input.
+
+## Temnion Network Protocol (TNP v1) Framing
+
+TNP packets use strict little-endian framing with CRC32C validation over payload bytes.
+
+Header (`TNPP`, 16 bytes):
+
+| Offset | Size | Field |
+| --- | ---: | --- |
+| 0 | 4 | magic `TNPP` (`0x544E5050`) |
+| 4 | 2 | version = 1 |
+| 6 | 2 | `message_type: u16` |
+| 8 | 8 | `stream_id: u64` |
+| 16 | 4 | `payload_len: u32` |
+| 20 | 4 | CRC32 of payload bytes (0 if payload is empty) |
+
+### Message Type Codes
+
+| Code | Hex | Message | Description |
+| --- | --- | --- | --- |
+| 1 | `0x0001` | `HandshakeRequest` | Client protocol version and capability flags |
+| 2 | `0x0002` | `HandshakeResponse` | Server version, server ID, and negotiated capabilities |
+| 3 | `0x0003` | `QueryRequest` | One-off query (SQL, TemQL, or Compact Tem) |
+| 4 | `0x0004` | `QueryResponse` | Query execution header and column metadata |
+| 5 | `0x0005` | `StreamRecord` | Streaming query result record |
+| 6 | `0x0006` | `StreamEnd` | Terminal marker for query result streams |
+| 7 | `0x0007` | `Ping` | Heartbeat keep-alive probe |
+| 8 | `0x0008` | `Pong` | Heartbeat keep-alive response |
+| 9 | `0x0009` | `Error` | Typed error with message payload |
+| 10 | `0x000A` | `DescribeRequest` | Server capability introspection probe |
+| 11 | `0x000B` | `DescribeResponse` | JSON server descriptor payload |
+| 12 | `0x000C` | `SubscribeRequest` | Real-time predicate subscription registration |
+| 13 | `0x000D` | `SubscribeResponse` | Subscription acknowledgement with snapshot boundaries |
+| 14 | `0x000E` | `LiveEvent` | Streaming committed or historical event record |
+| 15 | `0x000F` | `UnsubscribeRequest` | Cancellation request for active subscription |
+| 16 | `0x0010` | `UnsubscribeResponse` | Cancellation acknowledgement |
+
+### Live Subscription Message Payloads
+
+#### `SubscribeRequest` (`0x000C`)
+- `format: u8` (`0` = TemQL, `1` = CompactTem, `2` = SQL)
+- `has_from_seq: u8` (boolean flag)
+- `from_seq: u64` (if `has_from_seq == 1`)
+- `from_now: u8` (boolean flag; if 1, ignores historical events)
+- `query_len: u32`
+- `query_bytes: [u8; query_len]`
+
+#### `SubscribeResponse` (`0x000D`)
+- `subscription_id: u64`
+- `success: u8` (1 = success, 0 = failed)
+- `snapshot_start: u64`
+- `snapshot_end: u64`
+- `msg_len: u32`
+- `msg_bytes: [u8; msg_len]`
+
+#### `LiveEvent` (`0x000E`)
+- `subscription_id: u64`
+- `sequence: u64`
+- `is_live: u8` (`0` = historical snapshot catchup, `1` = newly committed live event)
+- `entity_shard: u32`
+- `entity_slot: u32`
+- `entity_generation: u32`
+- `schema: u32`
+- `valid_clock: u32`
+- `valid_time: u64`
+- `known_clock: u32`
+- `known_time: u64`
+- `payload_hex_len: u32`
+- `payload_hex_bytes: [u8; payload_hex_len]`
+
+#### `UnsubscribeRequest` (`0x000F`)
+- `subscription_id: u64`
+
+#### `UnsubscribeResponse` (`0x0010`)
+- `subscription_id: u64`
+- `success: u8` (1 = unregistered successfully, 0 = not found)
+
