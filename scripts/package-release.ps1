@@ -106,9 +106,15 @@ Copy-Item $temniondBin "$stageDir\bin\"
 Copy-Item $tzeentchBin "$stageDir\bin\"
 
 # Copy Studio Desktop binary if built
-$studioExe = "$repoRoot\apps\temnion-studio\src-tauri\target\release\temnion-studio$exeSuffix"
-if (Test-Path $studioExe) {
-    Copy-Item $studioExe "$stageDir\bin\"
+$studioCandidates = @(
+    "$repoRoot\apps\temnion-studio\src-tauri\target\release\temnion-studio-desktop$exeSuffix",
+    "$repoRoot\apps\temnion-studio\src-tauri\target\release\temnion-studio$exeSuffix"
+)
+foreach ($cand in $studioCandidates) {
+    if (Test-Path $cand) {
+        Copy-Item $cand "$stageDir\bin\temnion-studio$exeSuffix" -Force
+        break
+    }
 }
 
 # Copy Studio Web assets
@@ -127,7 +133,10 @@ Copy-Item "$repoRoot\services\systemd\temniond.service" "$stageDir\services\syst
 Copy-Item "$repoRoot\services\windows\install-service.ps1" "$stageDir\services\windows\"
 Copy-Item "$repoRoot\services\windows\uninstall-service.ps1" "$stageDir\services\windows\"
 
-# Copy documentation and license
+# Copy documentation, setup launcher, and license
+if (Test-Path "$repoRoot\setup.bat") {
+    Copy-Item "$repoRoot\setup.bat" "$stageDir\"
+}
 Copy-Item "$repoRoot\README.md" "$stageDir\"
 Copy-Item "$repoRoot\CHANGELOG.md" "$stageDir\"
 Copy-Item "$repoRoot\LICENSE" "$stageDir\" -ErrorAction SilentlyContinue
@@ -146,6 +155,18 @@ Compress-Archive -Path "$stageDir\*" -DestinationPath $archivePath -Force
 $hash = Get-FileHash -Path $archivePath -Algorithm SHA256
 $hashFile = "$OutputDir\$packageBaseName.zip.sha256"
 "$($hash.Hash)  $packageBaseName.zip" | Set-Content -Path $hashFile
+
+# 6. Copy native desktop installer bundles (.msi, .exe setup) if present
+$bundleDir = "$repoRoot\apps\temnion-studio\src-tauri\target\release\bundle"
+if (Test-Path $bundleDir) {
+    Get-ChildItem -Recurse $bundleDir -Include *.msi, *setup.exe, *.deb, *.AppImage, *.dmg | ForEach-Object {
+        $destFile = "$OutputDir\$($_.Name)"
+        Copy-Item $_.FullName $destFile -Force
+        $bHash = Get-FileHash -Path $destFile -Algorithm SHA256
+        "$($bHash.Hash)  $($_.Name)" | Set-Content -Path "$destFile.sha256"
+        Write-Host "  Installer Bundle: $destFile" -ForegroundColor Cyan
+    }
+}
 
 Write-Host "Package successfully created!" -ForegroundColor Green
 Write-Host "  Archive:  $archivePath"
