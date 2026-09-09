@@ -44,25 +44,75 @@ import {
   NavicatTabsBar,
   ObjectExplorerTree,
 } from "./components/navigation";
-import {
-  ConnectionPropertiesModal,
-  CreateBranchModal,
-  CreateDatabaseModal,
-  CreateQueryModal,
-  CreateTableModal,
-  CreateTimeModal,
-} from "./components/modals";
-import {
-  CausalityPanel,
-  ConnectionsPanel,
-  HistoryPanel,
-  IngestPanel,
-  MetricsPanel,
-  QueryPanel,
-  SchemaPanel,
-  TableViewerPanel,
-} from "./components/panels";
-import { GuidePanel } from "./Guide";
+// Lazy-loaded panel components for code-splitting and rapid initial bundle load
+const CausalityPanel = React.lazy(() =>
+  import("./components/panels/CausalityPanel").then((m) => ({ default: m.CausalityPanel }))
+);
+const ConnectionsPanel = React.lazy(() =>
+  import("./components/panels/ConnectionsPanel").then((m) => ({ default: m.ConnectionsPanel }))
+);
+const HistoryPanel = React.lazy(() =>
+  import("./components/panels/HistoryPanel").then((m) => ({ default: m.HistoryPanel }))
+);
+const IngestPanel = React.lazy(() =>
+  import("./components/panels/IngestPanel").then((m) => ({ default: m.IngestPanel }))
+);
+const MetricsPanel = React.lazy(() =>
+  import("./components/panels/MetricsPanel").then((m) => ({ default: m.MetricsPanel }))
+);
+const QueryPanel = React.lazy(() =>
+  import("./components/panels/QueryPanel").then((m) => ({ default: m.QueryPanel }))
+);
+const SchemaPanel = React.lazy(() =>
+  import("./components/panels/SchemaPanel").then((m) => ({ default: m.SchemaPanel }))
+);
+const TableViewerPanel = React.lazy(() =>
+  import("./components/panels/TableViewerPanel").then((m) => ({ default: m.TableViewerPanel }))
+);
+const GuidePanel = React.lazy(() =>
+  import("./Guide").then((m) => ({ default: m.GuidePanel }))
+);
+
+// Lazy-loaded modal components
+const ConnectionPropertiesModal = React.lazy(() =>
+  import("./components/modals/ConnectionPropertiesModal").then((m) => ({ default: m.ConnectionPropertiesModal }))
+);
+const CreateBranchModal = React.lazy(() =>
+  import("./components/modals/CreateBranchModal").then((m) => ({ default: m.CreateBranchModal }))
+);
+const CreateDatabaseModal = React.lazy(() =>
+  import("./components/modals/CreateDatabaseModal").then((m) => ({ default: m.CreateDatabaseModal }))
+);
+const CreateQueryModal = React.lazy(() =>
+  import("./components/modals/CreateQueryModal").then((m) => ({ default: m.CreateQueryModal }))
+);
+const CreateTableModal = React.lazy(() =>
+  import("./components/modals/CreateTableModal").then((m) => ({ default: m.CreateTableModal }))
+);
+const CreateTimeModal = React.lazy(() =>
+  import("./components/modals/CreateTimeModal").then((m) => ({ default: m.CreateTimeModal }))
+);
+
+function StudioLoadingFallback() {
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        height: "100%",
+        minHeight: "240px",
+        color: "var(--text-muted, #94a3b8)",
+        gap: "0.75rem",
+        fontSize: "0.9rem",
+      }}
+    >
+      <span className="pulse-dot" />
+      <span>Loading workspace view...</span>
+    </div>
+  );
+}
+
 
 export function App() {
   const queryClient = useQueryClient();
@@ -541,57 +591,63 @@ export function App() {
             onNewQueryTab={() => handleNewQueryTab()}
           />
 
-          <main className="studio-content">{tabContent}</main>
+          <main className="studio-content">
+            <React.Suspense fallback={<StudioLoadingFallback />}>
+              {tabContent}
+            </React.Suspense>
+          </main>
 
           <NavicatStatusBar connection={activeConnection} eventCount={status.eventCount} />
         </div>
       </div>
 
-      {editingConnection && (
-        <ConnectionPropertiesModal
-          connection={editingConnection}
-          isOpen={true}
-          onClose={() => setEditingConnection(null)}
-          onSave={(updated) => saveMutation.mutate(updated)}
+      <React.Suspense fallback={null}>
+        {editingConnection && (
+          <ConnectionPropertiesModal
+            connection={editingConnection}
+            isOpen={true}
+            onClose={() => setEditingConnection(null)}
+            onSave={(updated) => saveMutation.mutate(updated)}
+          />
+        )}
+
+        <CreateDatabaseModal
+          isOpen={createDbOpen}
+          connections={connections}
+          initialConnectionId={createDbInitialConnId}
+          onClose={() => setCreateDbOpen(false)}
+          onCreate={(opts) => createDbMutation.mutate(opts)}
         />
-      )}
 
-      <CreateDatabaseModal
-        isOpen={createDbOpen}
-        connections={connections}
-        initialConnectionId={createDbInitialConnId}
-        onClose={() => setCreateDbOpen(false)}
-        onCreate={(opts) => createDbMutation.mutate(opts)}
-      />
+        <CreateTableModal
+          isOpen={createTableOpen}
+          activeDatabase={activeConnection.database}
+          onClose={() => setCreateTableOpen(false)}
+          onCreate={(opts) => createTableMutation.mutate(opts)}
+        />
 
-      <CreateTableModal
-        isOpen={createTableOpen}
-        activeDatabase={activeConnection.database}
-        onClose={() => setCreateTableOpen(false)}
-        onCreate={(opts) => createTableMutation.mutate(opts)}
-      />
+        <CreateQueryModal
+          isOpen={createQueryOpen}
+          activeDatabase={activeConnection.database}
+          onClose={() => setCreateQueryOpen(false)}
+          onCreate={(opts) => createQueryMutation.mutate(opts)}
+        />
 
-      <CreateQueryModal
-        isOpen={createQueryOpen}
-        activeDatabase={activeConnection.database}
-        onClose={() => setCreateQueryOpen(false)}
-        onCreate={(opts) => createQueryMutation.mutate(opts)}
-      />
+        <CreateTimeModal
+          isOpen={createTimeOpen}
+          activeDatabase={activeConnection.database}
+          onClose={() => setCreateTimeOpen(false)}
+          onCreate={(opts) => createTimeMutation.mutate(opts)}
+        />
 
-      <CreateTimeModal
-        isOpen={createTimeOpen}
-        activeDatabase={activeConnection.database}
-        onClose={() => setCreateTimeOpen(false)}
-        onCreate={(opts) => createTimeMutation.mutate(opts)}
-      />
-
-      <CreateBranchModal
-        isOpen={createBranchOpen}
-        activeDatabase={activeConnection.database}
-        existingBranches={branchObjectsData}
-        onClose={() => setCreateBranchOpen(false)}
-        onCreate={(opts) => createBranchMutation.mutate(opts)}
-      />
+        <CreateBranchModal
+          isOpen={createBranchOpen}
+          activeDatabase={activeConnection.database}
+          existingBranches={branchObjectsData}
+          onClose={() => setCreateBranchOpen(false)}
+          onCreate={(opts) => createBranchMutation.mutate(opts)}
+        />
+      </React.Suspense>
     </div>
   );
 }

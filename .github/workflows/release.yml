@@ -1,0 +1,115 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release git tag (e.g. v0.1.0)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+jobs:
+  build-release-packages:
+    name: Package / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows x64 (MSVC)
+            os: windows-2022
+            target: x86_64-pc-windows-msvc
+            platform: windows
+          - name: Linux x64 (GNU)
+            os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            platform: linux
+          - name: macOS Apple Silicon (ARM64)
+            os: macos-14
+            target: aarch64-apple-darwin
+            platform: macos
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: apps/temnion-studio/package-lock.json
+
+      - name: Build Studio Web UI
+        working-directory: apps/temnion-studio
+        run: |
+          npm ci
+          npm run build
+
+      - name: Install Rust toolchain
+        run: rustup toolchain install 1.85.0 --profile minimal --target ${{ matrix.target }} --no-self-update
+
+      - name: Build & Package Release (Windows)
+        if: matrix.platform == 'windows'
+        shell: pwsh
+        run: |
+          ./scripts/package-release.ps1 -Target ${{ matrix.target }}
+
+      - name: Build & Package Release (Unix)
+        if: matrix.platform != 'windows'
+        shell: bash
+        run: |
+          chmod +x ./scripts/package-release.sh ./installer/*.sh
+          ./scripts/package-release.sh "" "${{ matrix.target }}"
+
+      - name: Upload Release Artifacts
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4.6.1
+        with:
+          name: temnion-dist-${{ matrix.target }}
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  publish-github-release:
+    name: Publish GitHub Release
+    needs: [build-release-packages]
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Download all release artifacts
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229d5806 # v4.1.9
+        with:
+          path: downloaded-artifacts
+          pattern: temnion-dist-*
+          merge-multiple: true
+
+      - name: List artifacts to release
+        run: |
+          mkdir -p release-files
+          cp downloaded-artifacts/* release-files/
+          ls -la release-files/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@c062e08bd532815e2082a85e87e3ef29c3e6d191 # v2.0.8
+        with:
+          files: release-files/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false

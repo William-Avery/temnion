@@ -12,5 +12,23 @@ export default defineConfig({
     target: ["es2021", "chrome100", "safari13"],
     minify: "esbuild",
     sourcemap: true,
+    chunkSizeWarningLimit: 600,
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          vendor: ["react", "react-dom"],
+          tanstack: ["@tanstack/react-query", "@tanstack/react-table"],
+          codemirror: [
+            "@codemirror/commands",
+            "@codemirror/lang-sql",
+            "@codemirror/language",
+            "@codemirror/state",
+            "@codemirror/view",
+            "@lezer/highlight",
+          ],
+        },
+      },
+    },
   },
 });
+

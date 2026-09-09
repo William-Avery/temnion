@@ -24,14 +24,17 @@
 param(
     [string]$Version,
     [string]$Target,
-    [string]$OutputDir = "$PSScriptRoot\..\dist",
+    [string]$OutputDir,
     [switch]$SkipBuild
 )
 
 $ErrorActionPreference = "Stop"
 
-# Auto-detect version from root Cargo.toml if omitted
+# Auto-detect version and paths
 $repoRoot = (Resolve-Path "$PSScriptRoot\..").Path
+if (-not $OutputDir) {
+    $OutputDir = "$repoRoot\dist"
+}
 if (-not $Version) {
     $cargoToml = Get-Content "$repoRoot\Cargo.toml" -Raw
     if ($cargoToml -match 'version\s*=\s*"([^"]+)"') {

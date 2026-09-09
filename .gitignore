@@ -5,7 +5,10 @@ target/
 
 # Future desktop frontend dependencies and generated outputs.
 node_modules/
+/dist/
 /apps/**/dist/
+/clients/**/dist/
+*.egg-info/
 /apps/**/build/
 /apps/**/.vite/
 /apps/**/.cache/
@@ -61,6 +64,9 @@ node_modules/
 /*.log
 *.profraw
 *.profdata
+__pycache__/
+*.pyc
+*.pyo
 
 # Local editor and operating-system files.
 /.idea/

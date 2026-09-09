@@ -1,0 +1,27 @@
+{
+  "name": "@temnion/client",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Official TypeScript/Node.js client for the Temnion bi-temporal & causal database",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test dist/tests/protocol.test.js",
+    "pretest": "npm run build"
+  },
+  "keywords": [
+    "temnion",
+    "database",
+    "bitemporal",
+    "causal",
+    "cdc",
+    "streaming"
+  ],
+  "author": "Temnion Contributors",
+  "license": "AGPL-3.0-only",
+  "devDependencies": {
+    "@types/node": "^22.20.2",
+    "typescript": "^5.7.3"
+  }
+}
